@@ -14,10 +14,10 @@ export function AppShell({ workflow, context, children }: {
   return <div className="rating-shell">
     <header className="app-header">
       <div className="app-identity">
-        <img className="institution-logo" src={`${import.meta.env.BASE_URL}ph-ludwigsburg-logo.png`} alt="Pädagogische Hochschule Ludwigsburg · University of Education" />
-        <div className="app-name"><ProjectLogo /><p>Feedback for reflective writing</p></div>
+        <img className="institution-logo" src={`${import.meta.env.BASE_URL}ph-ludwigsburg-logo.png`} alt="Pädagogische Hochschule Ludwigsburg" />
+        <div className="app-name"><ProjectLogo /></div>
       </div>
-      <div className="app-context"><strong>{workflow}</strong>{context}<nav className="workflow-navigation" aria-label="Workflow"><a href="?workflow=evaluation" aria-current={workflow === 'Expert evaluation' ? 'page' : undefined}>Expert evaluation</a><a href="?workflow=review" aria-current={workflow === 'Lecturer review' ? 'page' : undefined}>Lecturer review</a></nav></div>
+      <div className="app-context"><strong>{workflow === 'Expert evaluation' ? 'Expertenbewertung' : 'Feedbackprüfung'}</strong>{context}<nav className="workflow-navigation" aria-label="Arbeitsbereich"><a href="?workflow=evaluation" aria-current={workflow === 'Expert evaluation' ? 'page' : undefined}>Expertenbewertung</a><a href="?workflow=review" aria-current={workflow === 'Lecturer review' ? 'page' : undefined}>Feedbackprüfung</a></nav></div>
     </header>
     {children}
   </div>
@@ -29,9 +29,9 @@ export function PacketFileButton({ onImport, primary = false }: {
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   return <>
-    <input ref={inputRef} className="packet-file-input" type="file" accept="application/json,.json" onChange={onImport} tabIndex={-1} aria-label="Evaluation packet file" />
-    <button className={primary ? 'submit-button open-packet-button' : 'icon-button'} onClick={() => inputRef.current?.click()} title="Open evaluation packet JSON">
-      <Upload size={18} /><span>{primary ? 'Open evaluation packet' : 'Open another packet'}</span>
+    <input ref={inputRef} className="packet-file-input" type="file" accept="application/json,.json" onChange={onImport} tabIndex={-1} aria-label="Bewertungspaket als JSON-Datei" />
+    <button className={primary ? 'submit-button open-packet-button' : 'icon-button'} onClick={() => inputRef.current?.click()} title="Bewertungspaket als JSON-Datei öffnen">
+      <Upload size={18} /><span>{primary ? 'Bewertungspaket öffnen' : 'Anderes Paket öffnen'}</span>
     </button>
   </>
 }
@@ -46,18 +46,17 @@ export function EvaluationStart({ evaluatorId, onEvaluatorChange, onImport, save
 }) {
   return <main className="evaluation-start">
     <section className="start-content" aria-labelledby="start-title">
-      <ProjectLogo className="start-project-logo" />
-      <h1 id="start-title">Expert evaluation</h1>
-      <p className="start-description">Evaluate automatically generated assessment and feedback for student reflections. Generator information is blinded.</p>
-      <label className="annotator-field start-annotator">Annotator code<input value={evaluatorId} onChange={(event) => onEvaluatorChange(event.target.value)} placeholder="Your assigned code" autoComplete="off" /></label>
+      <h1 id="start-title">Expertenbewertung</h1>
+      <p className="start-description">Bewerten Sie automatisch generierte Einschätzungen und Feedback zu studentischen Reflexionen. Informationen zum erzeugenden System sind ausgeblendet.</p>
+      <label className="annotator-field start-annotator">Bewertungscode<input value={evaluatorId} onChange={(event) => onEvaluatorChange(event.target.value)} placeholder="Ihr zugewiesener Code" autoComplete="off" /></label>
       <PacketFileButton onImport={onImport} primary />
-      <p className="local-storage-note">Ratings and drafts are stored locally in this browser.</p>
+      <p className="local-storage-note">Bewertungen und Entwürfe werden lokal in diesem Browser gespeichert.</p>
       <details className="start-storage-actions">
-        <summary>Stored responses</summary>
-        <p>{savedCount} submitted ratings for this annotator.</p>
+        <summary>Gespeicherte Bewertungen</summary>
+        <p>{savedCount} abgeschlossene Bewertungen für diesen Code.</p>
         <div className="rating-actions">
-          <button className="icon-button" onClick={onExportSaved} disabled={!savedCount}><Download size={16} />Export stored ratings</button>
-          <button className="icon-button danger" onClick={onClear}><Trash2 size={16} />Clear local data</button>
+          <button className="icon-button" onClick={onExportSaved} disabled={!savedCount}><Download size={16} />Bewertungen exportieren</button>
+          <button className="icon-button danger" onClick={onClear}><Trash2 size={16} />Lokale Daten löschen</button>
         </div>
       </details>
     </section>

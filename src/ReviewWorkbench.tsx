@@ -71,13 +71,13 @@ export default function ReviewWorkbench() {
   function changeReviewer(value: string) {
     setReviewer(value)
     try { localStorage.setItem(REVIEWER_KEY, value) }
-    catch { setStorageError('Reviewer code could not be stored locally.') }
+    catch { setStorageError('Der Prüfungscode konnte nicht lokal gespeichert werden.') }
   }
 
   function openBundle(value: unknown) {
     let loaded = parseReviewBundle(value)
     const code = loaded.progress?.reviewer_id.trim() || reviewer.trim()
-    if (!code) throw new Error('Enter a reviewer code before opening a review bundle.')
+    if (!code) throw new Error('Geben Sie Ihren Prüfungscode ein, bevor Sie ein Prüfungspaket öffnen.')
     if (loaded.progress && reviewer.trim() && reviewer.trim() !== code) throw new Error('This progress file belongs to a different reviewer. Close the bundle and enter its reviewer code.')
     const localValue = storedBundles()[`${code}::${loaded.bundle_id}`]
     let local: ReviewBundle | null = null
@@ -110,9 +110,9 @@ export default function ReviewWorkbench() {
   async function openSynthetic() {
     try {
       const response = await fetch(`${import.meta.env.BASE_URL}examples/synthetic-review-bundle.json`)
-      if (!response.ok) throw new Error('Could not load the synthetic example.')
+      if (!response.ok) throw new Error('Das synthetische Beispiel konnte nicht geladen werden.')
       openBundle(await response.json())
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not open synthetic example.') }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Das synthetische Beispiel konnte nicht geöffnet werden.') }
   }
 
   function updateDraft(nextDraft: ReviewDraft) {
@@ -164,26 +164,26 @@ export default function ReviewWorkbench() {
   }
 
   function exportStored() {
-    if (!reviewer.trim()) { setError('Enter a reviewer code.'); return }
+    if (!reviewer.trim()) { setError('Geben Sie Ihren Prüfungscode ein.'); return }
     try {
       const entries = Object.values(storedBundles()).filter(value => value.progress?.reviewer_id === reviewer.trim())
-      if (!entries.length) { setError('No stored review bundles for this reviewer.'); return }
+      if (!entries.length) { setError('Für diesen Code sind keine Prüfungspakete gespeichert.'); return }
       for (const value of entries) downloadReview('prebi-review-progress.json', parseReviewBundle(value))
-    } catch { setError('Stored review progress could not be read.') }
+    } catch { setError('Der gespeicherte Prüfungsstand konnte nicht gelesen werden.') }
   }
 
   const evidence = { selectedId: previewId, onPreview: setPreviewId, onActivate: highlightEvidence }
 
   return <AppShell workflow="Lecturer review" context={bundle ? <><span>{completeCount} / {bundle.packets.length} current approvals</span><span>Reviewer: {reviewer}</span></> : undefined}>
-    <input ref={fileRef} type="file" className="packet-file-input" accept="application/json,.json" aria-label="Review bundle file" onChange={importFile} />
+    <input ref={fileRef} type="file" className="packet-file-input" accept="application/json,.json" aria-label="Prüfungspaket als JSON-Datei" onChange={importFile} />
     {storageError && <p className="rating-error" role="alert">{storageError}</p>}
     {!bundle ? <main className="evaluation-start"><section className="start-content">
-      <h1>Lecturer review</h1>
-      <label className="annotator-field start-annotator">Reviewer code<input value={reviewer} onChange={event => changeReviewer(event.target.value)} autoComplete="off" /></label>
+      <h1>Feedbackprüfung</h1>
+      <label className="annotator-field start-annotator">Prüfungscode<input value={reviewer} onChange={event => changeReviewer(event.target.value)} placeholder="Ihr zugewiesener Code" autoComplete="off" /></label>
       {error && <p className="rating-error" role="alert">{error}</p>}
-      <div className="review-start-actions"><button className="submit-button" onClick={() => fileRef.current?.click()}><Upload size={18} />Open review bundle</button><button className="icon-button" onClick={openSynthetic}><FileJson size={18} />Open synthetic example</button></div>
-      <p className="local-storage-note">Review drafts and approvals are stored locally in this browser.</p>
-      <details className="start-storage-actions"><summary>Review files</summary><div className="review-start-actions"><button className="icon-button" onClick={exportStored}><Download size={18} />Export stored progress</button><button className="icon-button" onClick={() => downloadReview('prebi-review-bundle.schema.json', REVIEW_SCHEMA)}><Download size={18} />Download review schema</button><a href={`${import.meta.env.BASE_URL}examples/synthetic-review-bundle.json`} download>Download synthetic bundle</a></div></details>
+      <div className="review-start-actions"><button className="submit-button" onClick={() => fileRef.current?.click()}><Upload size={18} />Prüfungspaket öffnen</button><button className="icon-button" onClick={openSynthetic}><FileJson size={18} />Synthetisches Beispiel öffnen</button></div>
+      <p className="local-storage-note">Entwürfe und Freigaben werden lokal in diesem Browser gespeichert.</p>
+      <details className="start-storage-actions"><summary>Prüfungsdateien</summary><div className="review-start-actions"><button className="icon-button" onClick={exportStored}><Download size={18} />Prüfungsstand exportieren</button><button className="icon-button" onClick={() => downloadReview('prebi-review-bundle.schema.json', REVIEW_SCHEMA)}><Download size={18} />Prüfungsschema herunterladen</button><a href={`${import.meta.env.BASE_URL}examples/synthetic-review-bundle.json`} download>Synthetisches Paket herunterladen</a></div></details>
     </section></main> : <>
       <div className="rating-toolbar"><span>Lecturer feedback review</span><div className="rating-actions"><button className="icon-button" onClick={exportProgress}><Download size={18} />Export progress</button><button className="icon-button" onClick={() => fileRef.current?.click()}><Upload size={18} />Open review bundle</button><button className="icon-button" onClick={() => { setBundle(null); setError(''); setActiveItem(null) }}><X size={18} />Close bundle</button></div></div>
       <p className="review-status" role="status">{status} {storageError ? 'Export required to preserve work.' : 'Saved locally.'}</p>

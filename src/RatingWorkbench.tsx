@@ -193,16 +193,16 @@ export default function RatingWorkbench() {
         : parsed && typeof parsed === 'object' && Array.isArray((parsed as { packets?: unknown }).packets)
           ? (parsed as { packets: unknown[] }).packets
           : [parsed]
-      if (!loaded.every(isPacket)) throw new Error('File must contain blinded rating packets.')
+      if (!loaded.every(isPacket)) throw new Error('Die Datei muss verblindete Bewertungspakete enthalten.')
       const seen = new Set<string>()
       for (const item of loaded as Packet[]) {
-        if (seen.has(item.packet_id)) throw new Error('Packet IDs must be unique in the uploaded bundle.')
+        if (seen.has(item.packet_id)) throw new Error('Die Paket-IDs in der hochgeladenen Datei müssen eindeutig sein.')
         seen.add(item.packet_id)
         if (item.displayed_reflection_sha256 && await sha256(item.reflection) !== item.displayed_reflection_sha256) {
-          throw new Error('A packet reflection hash does not match its displayed content.')
+          throw new Error('Die Prüfsumme einer Reflexion stimmt nicht mit dem angezeigten Inhalt überein.')
         }
         if (item.display_output_sha256 && await sha256(item.output ?? item.human_feedback) !== item.display_output_sha256) {
-          throw new Error('A packet output hash does not match its displayed content.')
+          throw new Error('Die Prüfsumme einer Ausgabe stimmt nicht mit dem angezeigten Inhalt überein.')
         }
       }
       const shuffled = [...loaded as Packet[]].sort(() => Math.random() - 0.5)
@@ -214,7 +214,7 @@ export default function RatingWorkbench() {
       setTaskFilter(firstTask)
       setStatus(`Loaded ${shuffled.length} blinded packets. Order randomized for this session.`)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not read packet file.')
+      setError(caught instanceof SyntaxError ? 'Die Datei enthält kein gültiges JSON.' : caught instanceof Error ? caught.message : 'Die Paketdatei konnte nicht gelesen werden.')
     }
   }
 
@@ -307,7 +307,7 @@ export default function RatingWorkbench() {
   }
 
   function clearLocalData() {
-    if (!window.confirm('Clear all local drafts and submitted ratings from this browser? Download completed ratings first.')) return
+    if (!window.confirm('Alle lokalen Entwürfe und abgeschlossenen Bewertungen aus diesem Browser löschen? Laden Sie abgeschlossene Bewertungen vorher herunter.')) return
     setDrafts({})
     setSubmitted({})
     setCriterionIndex(0)
