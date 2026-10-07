@@ -55,29 +55,39 @@ The rubric and rating guide are available in the packet navigation column.
 
 ### Rating Navigation And Completion
 
-Quality tasks show one criterion at a time; feedback-implied score tasks show one
-dimension at a time. Criterion labels, descriptions, anchors, scales, and required
-answers are taken unchanged from the packet. The step navigator allows revisiting
-any answer. **Save & next** validates the active answer and advances; drafts are
-still autosaved through the existing browser storage. The final **Submit rating**
-or **Update rating** validates every required answer, returns to the first
-incomplete one if necessary, and saves the original response format.
+Quality tasks show configured anchored criteria; feedback-implied scores use
+separate SW/UA/HA rows, nullable 0.0–3.0 values in tenths, and an explicit
+not-inferable state. A new answer is unanswered, not zero or not inferable.
+**Nächstes Kriterium**, **Nächster Fall**, and the case navigator never require a
+complete answer. Current responses determine `not_started`, `in_progress`, or
+`complete` automatically. Completed cases remain editable; no submit action is
+required. Unable-to-judge clears and disables the ordinary score and requires a
+justification before that answer counts as complete.
 
-After submission, navigation advances to the next packet without a current
-submission in the existing randomized task order. Packet buttons distinguish
-not-started packets, drafts, submissions, and pending changes. Draft completion
-does not count as submission. Editing a submitted response marks it pending and
-removes it from current completion until updated; existing exports still contain
-the last submitted response, not the pending edits.
+Meaningful changes and the current location are saved in IndexedDB. Original
+bundles are retained locally in the session so the saved-session list can resume
+without reopening the original file. Reopening the same bundle offers
+**Fortsetzen** or **Neu beginnen**; restarting requires confirmation. Loaded
+expert order is retained across sessions. Conflicting source IDs and concurrent
+tab changes are rejected rather than silently overwriting progress.
 
-Finishing a task shows **Task complete** and task export, with a route to the next
-unfinished task. **Evaluation complete** appears only when all loaded packets
-across all tasks have current submissions. Its **Export ratings** action exports
-all loaded submitted records for the current annotator to `ratings-evaluation.json`
-using the existing `schema_version` and `ratings` envelope. Other annotators and
-unloaded packets are excluded. **Review ratings** reopens the workspace; the
-completion screen can be reopened without changing responses. Reopening a fully
-submitted bundle restores its completion screen.
+**Stand exportieren** exports a self-contained `prebi_expert_session` wrapper
+with original packets, partial drafts, explicit unanswered dimensions, pending
+text-comment editors, identity, bundle checksum, and navigation position. Open
+that file to resume or transfer work; conflicting local/imported versions require
+an explicit choice. This recovery format is separate from research ratings.
+The collapsed technical controls also export the latest complete responses to
+`ratings-evaluation.json` using the unchanged `schema_version`/`ratings` envelope.
+Missing responses are never converted to zero. Legacy localStorage ratings and
+drafts are readable for migration and are not deleted or rewritten automatically.
+
+There is no server upload, account, or cloud synchronization. Browser/site data
+clearing can remove local progress; switching device or origin does not restore
+it. Export/import is the backup and transfer mechanism. Save failures are shown
+and leave the in-memory work exportable. IndexedDB and Web Locks are required for
+safe local persistence. GitHub Pages currently serves static assets without a
+service worker, so reliable offline reload/installability is not guaranteed and
+the UI makes no offline claim.
 
 The approved logo and local Figtree Regular, Medium, SemiBold, and Bold files are
 served from `rating-ui/public/`. The font license is included under
@@ -93,11 +103,22 @@ items, marking new reflection evidence, review decisions, and approval. Select
 an item's Mark evidence action, then toggle its reflection segments. Original
 generated feedback is preserved separately.
 
-Export progress includes original packets, unfinished drafts, approvals, and
-timestamps. Upload it to resume work, including on another browser. First-edit
-timing includes evidence changes and survives resume; elapsed time to approval
-includes pauses and is not active editing time. Review uses separate storage and
-no research rating controls. Approval does not deliver feedback to students.
+Lecturers can inspect any subset, mark individual items **Passt** or **Problem
+markieren**, and add optional comments or alternatives tied to each item ID.
+Evidence navigation highlights the selected item and its reflection segments.
+Progress uses neutral seen/with-feedback counts rather than dataset completion.
+Navigation is unrestricted, and flags, notes, feedback edits and evidence edits
+autosave. Formal use decisions remain optional and disclosed; item flags do not
+create or alter formal approval timestamps.
+
+Export includes a separate `prebi_lecturer_session` wrapper containing the
+unchanged review bundle, unfinished drafts, any explicit approvals/timestamps,
+item annotations, seen case IDs, and navigation position. Legacy review bundles
+remain importable and migrate without rewriting legacy storage. Upload a session
+to resume work, including on another browser. First-edit timing includes evidence
+changes and survives resume; elapsed time to explicit approval includes pauses
+and is not active editing time. Review uses separate storage and no research
+rating controls. Approval does not deliver feedback to students.
 See [REVIEW_CONTRACT.md](REVIEW_CONTRACT.md) for the contract and conflict behavior.
 Download the schema from Review files on the start screen.
 

@@ -14,7 +14,7 @@ export type SpanComment = {
   linked_reflection_segment_ids: string[]
 }
 export type ScoreAnswer = {
-  status: 'inferred_from_feedback' | 'not_inferable'
+  status: 'unanswered' | 'inferred_from_feedback' | 'not_inferable'
   score: number | null
   confidence: 'low' | 'medium' | 'high' | 'not_inferable'
   rationale: string

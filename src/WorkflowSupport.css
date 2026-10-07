@@ -1,0 +1,10 @@
+.workflow-help { max-width: 720px; padding: 12px 0; font-size: 14px; line-height: 1.6; }
+.workflow-help summary { display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; color: var(--ph-moss); }
+.workflow-help h2, .workflow-prompt h2 { font-size: 20px; margin: 12px 0; color: var(--ph-moss); }
+.workflow-help h3 { font-size: 16px; }
+.workflow-help li { margin-bottom: 8px; }
+.workflow-prompt { margin: 20px auto; padding: 20px 24px; max-width: 720px; border-block: 1px solid var(--rating-line); background: var(--ph-white); }
+.workflow-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.persistence-status { display: inline-flex; align-items: center; gap: 6px; color: var(--rating-muted); font-size: 13px; }
+.workflow-prompt .panel-title { align-items: center; }
+@media (max-width: 600px) { .workflow-prompt { padding: 16px; } }

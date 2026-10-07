@@ -16,7 +16,7 @@ try {
   if (reviewCompilation.status !== 0) throw new Error('Could not compile review contract for tests.')
   const reviewModulePath = join(temporaryDirectory, 'reviewContract.cjs')
   renameSync(join(temporaryDirectory, 'reviewContract.js'), reviewModulePath)
-  const result = spawnSync(process.execPath, ['--test', 'tests/ratingValidation.test.mjs', 'tests/reviewContract.test.mjs'], {
+  const result = spawnSync(process.execPath, ['--test', 'tests/ratingValidation.test.mjs', 'tests/reviewContract.test.mjs', 'tests/expertSession.test.mjs', 'tests/reviewSession.test.mjs'], {
     cwd: projectRoot,
     stdio: 'inherit',
     env: { ...process.env, PREBI_RATING_VALIDATION_MODULE: pathToFileURL(modulePath).href, PREBI_REVIEW_MODULE: pathToFileURL(reviewModulePath).href },

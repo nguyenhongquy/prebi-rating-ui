@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-const { answerError, canonicalJson, evaluationSteps, responseForDraft, submissionState } = await import(process.env.PREBI_RATING_VALIDATION_MODULE)
+const { answerError, canonicalJson, evaluationSteps, responseForDraft, submissionState, emptyDraft, caseState } = await import(process.env.PREBI_RATING_VALIDATION_MODULE)
 const packet = {
   packet_id: 'synthetic', task: 'assessment_quality', packet_version: '1.0.0',
   protocol_id: 'synthetic', protocol_version: '0.3.0', human_protocol: 'Original guide',
@@ -76,6 +76,27 @@ test('object key ordering does not create false pending edits', () => {
   assert.equal(submissionState(packet, draft, response), 'submitted')
   assert.equal(canonicalJson({ second: 2, first: 1 }), '{"first":1,"second":2}')
   assert.notEqual(canonicalJson([1, 2]), canonicalJson([2, 1]))
+})
+
+test('case completion follows current responses without explicit submission', () => {
+  assert.equal(caseState(packet, undefined), 'not_started')
+  assert.equal(caseState(packet, emptyDraft(packet)), 'not_started')
+  assert.equal(caseState(packet, draft), 'complete')
+  assert.equal(caseState(packet, { ...draft, criterionRatings: { fit: { score: null, unable_to_judge: true, comment: '' } } }), 'in_progress')
+  assert.equal(caseState(packet, { ...draft, criterionRatings: { fit: { score: null, unable_to_judge: true, comment: 'Grund' } } }), 'complete')
+})
+
+test('unanswered dimensions remain distinct from intentionally not inferable', () => {
+  const initial = emptyDraft(impliedPacket)
+  assert.equal(initial.scoreAnswers.SW.status, 'unanswered')
+  assert.equal(initial.scoreAnswers.SW.score, null)
+  assert.equal(caseState(impliedPacket, initial), 'not_started')
+  assert.equal(caseState(impliedPacket, impliedDraft), 'complete')
+  for (const score of [-0.1, 3.1, 1.75, NaN]) {
+    const invalid = { ...impliedDraft, scoreAnswers: { SW: { ...impliedDraft.scoreAnswers.SW, status: 'inferred_from_feedback', confidence: 'medium', score } } }
+    assert.ok(answerError(impliedPacket, invalid, 0))
+    assert.equal(caseState(impliedPacket, invalid), 'in_progress')
+  }
 })
 
 const syntheticBundle = JSON.parse(readFileSync(new URL('../public/examples/synthetic-evaluation-bundle.json', import.meta.url), 'utf8'))
