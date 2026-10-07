@@ -114,6 +114,27 @@ ratings across versions.
 
 ## Tests
 
+### Synthetic Evaluation Packets
+
+[public/examples/synthetic-evaluation-bundle.json](public/examples/synthetic-evaluation-bundle.json)
+contains three entirely invented German-language packets: assessment quality,
+feedback quality, and feedback-implied score. Their protocol IDs and rubric
+version are test-only, not a substitute for the research protocols.
+
+Download the bundle from the deployed site's
+`examples/synthetic-evaluation-bundle.json` URL, or select the local file using
+**Bewertungspaket öffnen** on the expert onboarding screen. Use a separate test
+code such as `synthetic-tester`, preferably in a separate browser profile.
+Synthetic ratings use the same browser storage and exports as real ratings;
+never mix them into research collections or clear a research profile to reset
+a test.
+
+The bundle exercises all task tabs, multi-step ratings, three-point quality
+scales, reflection evidence links, feedback span comments, implied-score
+evidence, non-inferable answers, completion, and export. The existing
+`synthetic-review-bundle.json` is a separate lecturer-review fixture and cannot
+be imported as an expert evaluation packet.
+
 ```bash
 npm test
 ```

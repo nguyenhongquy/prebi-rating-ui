@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const { answerError, canonicalJson, evaluationSteps, responseForDraft, submissionState } = await import(process.env.PREBI_RATING_VALIDATION_MODULE)
@@ -75,4 +76,56 @@ test('object key ordering does not create false pending edits', () => {
   assert.equal(submissionState(packet, draft, response), 'submitted')
   assert.equal(canonicalJson({ second: 2, first: 1 }), '{"first":1,"second":2}')
   assert.notEqual(canonicalJson([1, 2]), canonicalJson([2, 1]))
+})
+
+const syntheticBundle = JSON.parse(readFileSync(new URL('../public/examples/synthetic-evaluation-bundle.json', import.meta.url), 'utf8'))
+
+test('public synthetic evaluation bundle covers all tasks with valid source references', () => {
+  assert.equal(syntheticBundle.synthetic, true)
+  assert.deepEqual(syntheticBundle.packets.map(item => item.task).sort(), ['assessment_quality', 'feedback_implied_score', 'feedback_quality'])
+  assert.equal(new Set(syntheticBundle.packets.map(item => item.packet_id)).size, syntheticBundle.packets.length)
+  for (const item of syntheticBundle.packets) {
+    assert.ok(item.packet_id.startsWith('synthetic-'))
+    assert.ok(item.protocol_id.startsWith('synthetic-'))
+    assert.equal(item.condition_blinded, true)
+    assert.equal(item.packet_version, '1.0.0')
+    assert.ok(item.human_protocol.trim())
+    const segments = item.reflection.segments
+    const ids = new Set(segments.map(segment => segment.segment_id))
+    assert.equal(ids.size, segments.length)
+    assert.deepEqual(segments.map(segment => segment.order), [0, 1, 2])
+    assert.ok(segments.every(segment => segment.text.trim() && segment.segment_id.startsWith('synthetic-')))
+    assert.deepEqual(item.rubric.dimensions.map(dimension => dimension.dimension_id), ['SW', 'UA', 'HA'])
+    for (const output of Object.values(item.output ?? {}).flat()) {
+      assert.ok(output.evidence_segment_ids.length)
+      assert.ok(output.evidence_segment_ids.every(id => ids.has(id)))
+    }
+    if (item.task === 'feedback_implied_score') {
+      assert.ok(item.human_feedback.trim())
+      assert.deepEqual(item.score_dimensions.map(dimension => dimension.dimension_id), ['SW', 'UA', 'HA'])
+    } else {
+      assert.equal(item.scale.min, 1)
+      assert.equal(item.scale.max, 3)
+      assert.ok(item.criteria.length > 1)
+      for (const criterion of item.criteria) assert.deepEqual(Object.keys(criterion.anchors), ['1', '2', '3'])
+      if (item.task === 'assessment_quality') {
+        assert.deepEqual(item.output.dimensions.map(dimension => dimension.dimension_id), ['SW', 'UA', 'HA'])
+        assert.ok(item.output.dimensions.every(dimension => Number.isFinite(dimension.score) && dimension.score >= 0 && dimension.score <= 3 && dimension.justification.trim()))
+      } else {
+        for (const component of ['strengths', 'weaknesses', 'suggestions']) assert.ok(item.output[component].every(output => output.text.trim()))
+      }
+    }
+  }
+})
+
+test('synthetic evaluation packets support complete valid responses', () => {
+  for (const item of syntheticBundle.packets) {
+    const completeDraft = {
+      criterionRatings: Object.fromEntries((item.criteria ?? []).map(criterion => [criterion.criterion_id, { score: 2, unable_to_judge: false, comment: '' }])),
+      scoreAnswers: Object.fromEntries((item.score_dimensions ?? []).map(dimension => [dimension.dimension_id, { status: 'not_inferable', score: null, confidence: 'not_inferable', rationale: 'Synthetische Testantwort.', feedback_evidence: [] }])),
+      overallComment: '', spanComments: [],
+    }
+    for (const [index] of evaluationSteps(item).entries()) assert.equal(answerError(item, completeDraft, index), null)
+    assert.equal(submissionState(item, completeDraft, responseForDraft(item, completeDraft)), 'submitted')
+  }
 })

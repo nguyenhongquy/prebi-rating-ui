@@ -1,0 +1,113 @@
+{
+  "schema_version": "1.0.0",
+  "synthetic": true,
+  "description": "Vollständig erfundene Beispiele für UI-Tests. Keine Forschungsdaten und kein Ersatz für die Forschungsprotokolle.",
+  "packets": [
+    {
+      "packet_id": "synthetic-assessment-001",
+      "task": "assessment_quality",
+      "packet_version": "1.0.0",
+      "protocol_id": "synthetic-assessment-protocol",
+      "protocol_version": "1.0.0",
+      "human_protocol": "Synthetischer UI-Test: Prüfen Sie die generierte Einschätzung anhand der erfundenen Reflexion. Bewerten Sie jedes Kriterium auf der angegebenen Skala. Falls ein Urteil nicht möglich ist, wählen Sie Nicht beurteilbar und begründen Sie dies. Dieses Testprotokoll ersetzt kein Forschungsprotokoll.",
+      "condition_blinded": true,
+      "reflection": {
+        "segments": [
+          { "segment_id": "synthetic-assessment-segment-1", "order": 0, "text": "In einer erfundenen Unterrichtsstunde verglichen drei Kinder ihre Lösungswege. Ein Kind änderte seinen Ansatz nach einer Rückfrage." },
+          { "segment_id": "synthetic-assessment-segment-2", "order": 1, "text": "Die Rückfrage könnte geholfen haben, den Widerspruch zu erkennen. Ich kann jedoch nicht ausschließen, dass das Kind die Lösung bereits vorher gefunden hatte." },
+          { "segment_id": "synthetic-assessment-segment-3", "order": 2, "text": "In einer späteren Stunde möchte ich die Kinder ihre ersten Lösungsversuche notieren lassen und die Änderungen gemeinsam besprechen." }
+        ]
+      },
+      "rubric": {
+        "version": "synthetic-1.0.0",
+        "dimensions": [
+          { "dimension_id": "SW", "name": "Wahrnehmung", "description": "Erfundene Testdimension: konkrete Beobachtungen beschreiben.", "bands": { "0": "Keine Beobachtung", "1": "Allgemeine Beobachtung", "2": "Konkrete Beobachtung", "3": "Differenzierte Beobachtung" } },
+          { "dimension_id": "UA", "name": "Analyse", "description": "Erfundene Testdimension: mögliche Erklärungen abwägen.", "bands": { "0": "Keine Analyse", "1": "Eine Erklärung", "2": "Mehrere Erklärungen", "3": "Begründete Abwägung" } },
+          { "dimension_id": "HA", "name": "Handlungsalternativen", "description": "Erfundene Testdimension: nächste Schritte entwickeln.", "bands": { "0": "Kein nächster Schritt", "1": "Allgemeine Absicht", "2": "Konkreter Schritt", "3": "Begründete Alternative" } }
+        ]
+      },
+      "scale": { "min": 1, "max": 3, "anchors": { "1": "Nicht überzeugend", "2": "Teilweise überzeugend", "3": "Überzeugend" } },
+      "criteria": [
+        { "criterion_id": "evidence_fit", "label": "Belegpassung", "description": "Sind die Einschätzungen durch die angegebenen Reflexionssegmente gedeckt?", "anchors": { "1": "Wesentliche Aussagen nicht gedeckt", "2": "Teilweise gedeckt", "3": "Durchgehend gedeckt" } },
+        { "criterion_id": "rationale_quality", "label": "Nachvollziehbarkeit", "description": "Begründen die Erläuterungen die zugewiesenen Punktwerte nachvollziehbar?", "anchors": { "1": "Begründungen nicht nachvollziehbar", "2": "Begründungen teilweise nachvollziehbar", "3": "Begründungen durchgehend nachvollziehbar" } }
+      ],
+      "output": {
+        "dimensions": [
+          { "dimension_id": "SW", "score": 1.7, "justification": "Die Reflexion beschreibt konkrete Gesprächsbeiträge und die Änderung eines Lösungsansatzes, differenziert die Beobachtungen aber nur begrenzt.", "evidence_segment_ids": ["synthetic-assessment-segment-1"] },
+          { "dimension_id": "UA", "score": 2.1, "justification": "Zwei mögliche Erklärungen werden abgewogen und die Grenze der Beobachtung wird benannt.", "evidence_segment_ids": ["synthetic-assessment-segment-2"] },
+          { "dimension_id": "HA", "score": 2.0, "justification": "Ein konkreter nächster Schritt wird vorgeschlagen; weitere Alternativen werden nicht verglichen.", "evidence_segment_ids": ["synthetic-assessment-segment-3"] }
+        ]
+      }
+    },
+    {
+      "packet_id": "synthetic-feedback-001",
+      "task": "feedback_quality",
+      "packet_version": "1.0.0",
+      "protocol_id": "synthetic-feedback-protocol",
+      "protocol_version": "1.0.0",
+      "human_protocol": "Synthetischer UI-Test: Vergleichen Sie das generierte Feedback mit der erfundenen Reflexion. Prüfen Sie die Belege und bewerten Sie jedes Kriterium. Textausschnitte können kommentiert werden. Falls ein Urteil nicht möglich ist, wählen Sie Nicht beurteilbar und begründen Sie dies. Dieses Testprotokoll ersetzt kein Forschungsprotokoll.",
+      "condition_blinded": true,
+      "reflection": {
+        "segments": [
+          { "segment_id": "synthetic-feedback-segment-1", "order": 0, "text": "In einer erfundenen Gruppenarbeit sammelten die Kinder unterschiedliche Ideen. Ich notierte zwei Vorschläge an der Tafel." },
+          { "segment_id": "synthetic-feedback-segment-2", "order": 1, "text": "Die Abschlussrunde endete früh, weil die Materialausgabe länger dauerte als geplant. Ob alle Kinder ihre Ideen einbringen konnten, blieb offen." },
+          { "segment_id": "synthetic-feedback-segment-3", "order": 2, "text": "Künftig möchte ich die Materialien vor Beginn bereitstellen und mehr Zeit für die Abschlussrunde reservieren." }
+        ]
+      },
+      "rubric": {
+        "version": "synthetic-1.0.0",
+        "dimensions": [
+          { "dimension_id": "SW", "name": "Wahrnehmung", "description": "Erfundene Testdimension: konkrete Beobachtungen beschreiben.", "bands": { "0": "Keine Beobachtung", "1": "Allgemeine Beobachtung", "2": "Konkrete Beobachtung", "3": "Differenzierte Beobachtung" } },
+          { "dimension_id": "UA", "name": "Analyse", "description": "Erfundene Testdimension: mögliche Erklärungen abwägen.", "bands": { "0": "Keine Analyse", "1": "Eine Erklärung", "2": "Mehrere Erklärungen", "3": "Begründete Abwägung" } },
+          { "dimension_id": "HA", "name": "Handlungsalternativen", "description": "Erfundene Testdimension: nächste Schritte entwickeln.", "bands": { "0": "Kein nächster Schritt", "1": "Allgemeine Absicht", "2": "Konkreter Schritt", "3": "Begründete Alternative" } }
+        ]
+      },
+      "scale": { "min": 1, "max": 3, "anchors": { "1": "Nicht überzeugend", "2": "Teilweise überzeugend", "3": "Überzeugend" } },
+      "criteria": [
+        { "criterion_id": "content_accuracy", "label": "Inhaltliche Richtigkeit", "description": "Ist das Feedback durch die Reflexion gedeckt?", "anchors": { "1": "Wesentliche Aussagen nicht gedeckt", "2": "Teilweise gedeckt", "3": "Durchgehend gedeckt" } },
+        { "criterion_id": "development_value", "label": "Entwicklungsnutzen", "description": "Unterstützt das Feedback einen konkreten nächsten Entwicklungsschritt?", "anchors": { "1": "Kein erkennbarer Entwicklungsnutzen", "2": "Teilweise hilfreiche Hinweise", "3": "Konkrete und hilfreiche Hinweise" } }
+      ],
+      "output": {
+        "strengths": [
+          { "text": "Sie benennen unterschiedliche Ideen und machen einzelne Vorschläge sichtbar.", "evidence_segment_ids": ["synthetic-feedback-segment-1"] }
+        ],
+        "weaknesses": [
+          { "text": "Die Reflexion lässt offen, ob alle Kinder Gelegenheit hatten, ihre Ideen einzubringen.", "evidence_segment_ids": ["synthetic-feedback-segment-2"] }
+        ],
+        "suggestions": [
+          { "text": "Stellen Sie das Material vorher bereit und planen Sie eine kurze Rückmeldung jedes Kindes in der Abschlussrunde ein.", "evidence_segment_ids": ["synthetic-feedback-segment-2", "synthetic-feedback-segment-3"] }
+        ]
+      }
+    },
+    {
+      "packet_id": "synthetic-implied-score-001",
+      "task": "feedback_implied_score",
+      "packet_version": "1.0.0",
+      "protocol_id": "synthetic-implied-score-protocol",
+      "protocol_version": "1.0.0",
+      "human_protocol": "Synthetischer UI-Test: Leiten Sie ausschließlich aus dem menschlichen Feedback einen Punktwert je Dimension ab. Verwenden Sie Werte von 0,0 bis 3,0 in Schritten von 0,1 und geben Sie Sicherheit und Begründung an. Wenn kein Punktwert ableitbar ist, wählen Sie Nicht ableitbar und begründen Sie dies. Die Reflexion ist kein Ersatz für einen Beleg im Feedback. Dieses Testprotokoll ersetzt kein Forschungsprotokoll.",
+      "condition_blinded": true,
+      "reflection": {
+        "segments": [
+          { "segment_id": "synthetic-implied-segment-1", "order": 0, "text": "In einem erfundenen Gespräch berichteten drei Kinder von ihren Lösungsversuchen. Ein Kind änderte seinen Ansatz nach einer Rückfrage." },
+          { "segment_id": "synthetic-implied-segment-2", "order": 1, "text": "Die Rückfrage könnte geholfen haben, den Widerspruch zu erkennen. Ich kann jedoch nicht ausschließen, dass das Kind die Lösung bereits vorher gefunden hatte." },
+          { "segment_id": "synthetic-implied-segment-3", "order": 2, "text": "Für eine spätere Stunde habe ich noch keinen konkreten nächsten Schritt festgelegt." }
+        ]
+      },
+      "rubric": {
+        "version": "synthetic-1.0.0",
+        "dimensions": [
+          { "dimension_id": "SW", "name": "Wahrnehmung", "description": "Erfundene Testdimension: konkrete Beobachtungen beschreiben.", "bands": { "0": "Keine Beobachtung", "1": "Allgemeine Beobachtung", "2": "Konkrete Beobachtung", "3": "Differenzierte Beobachtung" } },
+          { "dimension_id": "UA", "name": "Analyse", "description": "Erfundene Testdimension: mögliche Erklärungen abwägen.", "bands": { "0": "Keine Analyse", "1": "Eine Erklärung", "2": "Mehrere Erklärungen", "3": "Begründete Abwägung" } },
+          { "dimension_id": "HA", "name": "Handlungsalternativen", "description": "Erfundene Testdimension: nächste Schritte entwickeln.", "bands": { "0": "Kein nächster Schritt", "1": "Allgemeine Absicht", "2": "Konkreter Schritt", "3": "Begründete Alternative" } }
+        ]
+      },
+      "score_dimensions": [
+        { "dimension_id": "SW", "label": "Wahrnehmung" },
+        { "dimension_id": "UA", "label": "Analyse" },
+        { "dimension_id": "HA", "label": "Handlungsalternativen" }
+      ],
+      "human_feedback": "Sie beschreiben konkrete Gesprächsbeiträge und die Änderung eines Lösungsansatzes. Damit zeigen Sie eine konkrete, aber noch nicht umfassend differenzierte Wahrnehmung. In Ihrer Analyse wägen Sie zwei mögliche Erklärungen für die Veränderung ab und benennen die Grenze Ihrer Beobachtung. Zu Handlungsalternativen enthält dieses Feedback keine Einschätzung."
+    }
+  ]
+}
