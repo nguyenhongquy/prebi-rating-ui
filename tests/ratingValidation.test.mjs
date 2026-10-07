@@ -24,7 +24,7 @@ test('step enumeration preserves IDs and packet order', () => {
 
 test('quality rating must exist and fit the protocol scale', () => {
   assert.equal(answerError(packet, draft, 0), null)
-  assert.match(answerError(packet, { ...draft, criterionRatings: {} }, 0), /Rate Fit/)
+  assert.match(answerError(packet, { ...draft, criterionRatings: {} }, 0), /Bewerten Sie Fit/)
   for (const score of [null, 0, 4, 2.5]) {
     assert.ok(answerError(packet, { ...draft, criterionRatings: { fit: { score, unable_to_judge: false, comment: '' } } }, 0))
   }
@@ -37,16 +37,16 @@ test('legacy five-point scales remain available', () => {
 
 test('unable-to-judge requires a nonblank reason', () => {
   const unable = { ...draft, criterionRatings: { fit: { score: null, unable_to_judge: true, comment: '  ' } } }
-  assert.match(answerError(packet, unable, 0), /Explain why Fit/)
+  assert.match(answerError(packet, unable, 0), /Begründen Sie, warum Fit/)
   assert.equal(answerError(packet, { ...unable, criterionRatings: { fit: { ...unable.criterionRatings.fit, comment: 'Reason' } } }, 0), null)
 })
 
 test('implied scores retain rationale and inferability requirements', () => {
   assert.equal(answerError(impliedPacket, impliedDraft, 0), null)
   const answer = impliedDraft.scoreAnswers.SW
-  assert.match(answerError(impliedPacket, { ...impliedDraft, scoreAnswers: { SW: { ...answer, rationale: '' } } }, 0), /Add a rationale/)
-  assert.match(answerError(impliedPacket, { ...impliedDraft, scoreAnswers: { SW: { ...answer, status: 'inferred_from_feedback' } } }, 0), /Complete the score and confidence/)
-  assert.match(answerError(impliedPacket, { ...impliedDraft, scoreAnswers: { SW: { ...answer, feedback_evidence: [{ start_character: 0, end_character: 9, quote: 'Synthetic' }] } } }, 0), /Remove score evidence/)
+  assert.match(answerError(impliedPacket, { ...impliedDraft, scoreAnswers: { SW: { ...answer, rationale: '' } } }, 0), /Geben Sie eine Begründung/)
+  assert.match(answerError(impliedPacket, { ...impliedDraft, scoreAnswers: { SW: { ...answer, status: 'inferred_from_feedback' } } }, 0), /Ergänzen Sie den Punktwert und die Sicherheit/)
+  assert.match(answerError(impliedPacket, { ...impliedDraft, scoreAnswers: { SW: { ...answer, feedback_evidence: [{ start_character: 0, end_character: 9, quote: 'Synthetic' }] } } }, 0), /Entfernen Sie die Punktwertbelege/)
   assert.equal(answerError(impliedPacket, { ...impliedDraft, scoreAnswers: { SW: { ...answer, status: 'inferred_from_feedback', score: 1.7, confidence: 'medium' } } }, 0), null)
 })
 

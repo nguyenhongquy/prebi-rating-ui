@@ -12,13 +12,13 @@
 .rating-main .criterion-heading h3 { margin: 0 0 8px; color: var(--ph-moss); font-size: 20px; }
 .rating-main .criterion-heading p, .rating-main .criterion-anchors { font-size: 15px; line-height: 1.6; }
 .rating-main .score-buttons { gap: 8px; margin-top: 12px; }
-.rating-main .score-buttons button { width: 48px; height: 48px; font-size: 16px; }
+.rating-main .score-buttons button { width: 100%; min-height: 52px; height: auto; font-size: 15px; }
 .rating-main .field { font-size: 14px; }
 .rating-main .field textarea, .rating-main .field input, .rating-main .field select { font-size: 15px; }
 .rating-main .field small, .rating-main .unable, .rating-main .infer-toggle { font-size: 13px; }
 .rating-main .score-grid { grid-template-columns: minmax(0, 1fr); }
 .rating-main .score-card { border: 0; background: var(--ph-white); padding: 16px 0; }
-.rating-main .score-card header strong { font-size: 20px; }
+.rating-main .score-card header strong { font-size: 14px; }
 .rating-main .rating-error { margin: 12px 0; font-size: 14px; }
 .rating-footer { flex-wrap: wrap; padding-bottom: 16px; }
 .rating-footer > div { flex-wrap: wrap; }

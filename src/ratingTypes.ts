@@ -50,4 +50,4 @@ export type Packet = {
   condition_blinded: true
 }
 
-export const componentLabels: Record<string, string> = { strengths: 'Strengths', weaknesses: 'Development needs', suggestions: 'Next-step suggestions' }
+export const componentLabels: Record<string, string> = { strengths: 'Stärken', weaknesses: 'Entwicklungsbedarf', suggestions: 'Handlungsvorschläge' }

@@ -97,52 +97,52 @@ function checkFeedback(packet: ReviewPacket, value: ReviewFeedback, allowBlank =
   const segments = new Set(packet.reflection.segments.map(segment => segment.segment_id))
   const items = new Set<string>()
   for (const component of REVIEW_COMPONENTS) for (const item of value[component]) {
-    if (!allowBlank && !item.text.trim()) throw new Error('Generated or approved feedback items cannot be blank.')
-    if (items.has(item.item_id)) throw new Error('Feedback item IDs must be unique within a packet.')
+    if (!allowBlank && !item.text.trim()) throw new Error('Generierte oder freigegebene Feedbackeinträge dürfen nicht leer sein.')
+    if (items.has(item.item_id)) throw new Error('Die Kennungen der Feedbackeinträge müssen innerhalb eines Pakets eindeutig sein.')
     items.add(item.item_id)
-    if (item.evidence_segment_ids.some(id => !segments.has(id))) throw new Error('Feedback references an unknown reflection segment.')
+    if (item.evidence_segment_ids.some(id => !segments.has(id))) throw new Error('Das Feedback verweist auf ein unbekanntes Reflexionssegment.')
   }
 }
 
 export function approvalError(packet: ReviewPacket, draft: ReviewDraft): string | null {
-  if (!draft.decision) return 'Choose a review decision.'
-  if (REVIEW_COMPONENTS.some(component => draft.feedback[component].some(item => !item.text.trim()))) return 'Complete or remove blank feedback items.'
-  if (draft.decision === 'use_as_generated' && !sameReviewValue(draft.feedback, packet.generated_feedback)) return 'Use with edits, or restore the generated feedback.'
-  if (draft.decision === 'use_with_edits' && sameReviewValue(draft.feedback, packet.generated_feedback)) return 'Edit the feedback or evidence, or use as generated.'
-  if (draft.decision !== 'do_not_use' && !REVIEW_COMPONENTS.some(component => draft.feedback[component].length)) return 'Add feedback before approving it for use.'
+  if (!draft.decision) return 'Wählen Sie eine Prüfentscheidung.'
+  if (REVIEW_COMPONENTS.some(component => draft.feedback[component].some(item => !item.text.trim()))) return 'Ergänzen oder entfernen Sie leere Feedbackeinträge.'
+  if (draft.decision === 'use_as_generated' && !sameReviewValue(draft.feedback, packet.generated_feedback)) return 'Wählen Sie „Mit Änderungen verwenden“ oder stellen Sie das generierte Feedback wieder her.'
+  if (draft.decision === 'use_with_edits' && sameReviewValue(draft.feedback, packet.generated_feedback)) return 'Bearbeiten Sie das Feedback oder die Belege oder wählen Sie „Unverändert verwenden“.'
+  if (draft.decision !== 'do_not_use' && !REVIEW_COMPONENTS.some(component => draft.feedback[component].length)) return 'Fügen Sie Feedback hinzu, bevor Sie es zur Verwendung freigeben.'
   return null
 }
 
 export function parseReviewBundle(value: unknown): ReviewBundle {
-  if (!validate(value)) throw new Error(`Invalid lecturer review bundle: ${ajv.errorsText(validate.errors, { separator: '; ' })}`)
+  if (!validate(value)) throw new Error(`Ungültiges Prüfungspaket. Die Datei entspricht nicht dem Prüfungsschema. Betroffene Felder: ${(validate.errors ?? []).map(error => `${error.instancePath || '/'}${error.keyword === 'required' ? ` (${String(error.params.missingProperty)})` : ''}`).join('; ')}`)
   const bundle = value as ReviewBundle
   const packets = new Map<string, ReviewPacket>()
   for (const packet of bundle.packets) {
-    if (packets.has(packet.review_packet_id)) throw new Error('Review packet IDs must be unique.')
+    if (packets.has(packet.review_packet_id)) throw new Error('Die Kennungen der Prüfungspakete müssen eindeutig sein.')
     packets.set(packet.review_packet_id, packet)
     const ids = packet.reflection.segments.map(segment => segment.segment_id)
     const orders = packet.reflection.segments.map(segment => segment.order)
-    if (new Set(ids).size !== ids.length || new Set(orders).size !== orders.length) throw new Error('Reflection segment IDs and orders must be unique.')
+    if (new Set(ids).size !== ids.length || new Set(orders).size !== orders.length) throw new Error('Die Kennungen und Positionsnummern der Reflexionssegmente müssen eindeutig sein.')
     checkFeedback(packet, packet.generated_feedback)
   }
   for (const [id, draft] of Object.entries(bundle.progress?.drafts ?? {})) {
     const packet = packets.get(id)
-    if (!packet) throw new Error('Draft references an unknown review packet.')
+    if (!packet) throw new Error('Der Entwurf verweist auf ein unbekanntes Prüfungspaket.')
     checkFeedback(packet, draft.feedback, true)
-    if (draft.first_edited_at && Date.parse(draft.first_edited_at) > Date.parse(draft.updated_at)) throw new Error('First edit cannot be later than the draft update.')
-    if (!sameReviewValue(draft.feedback, packet.generated_feedback) && !draft.first_edited_at) throw new Error('Edited feedback must include its first-edit timestamp.')
+    if (draft.first_edited_at && Date.parse(draft.first_edited_at) > Date.parse(draft.updated_at)) throw new Error('Die erste Änderung darf nicht nach der letzten Entwurfsaktualisierung liegen.')
+    if (!sameReviewValue(draft.feedback, packet.generated_feedback) && !draft.first_edited_at) throw new Error('Bearbeitetes Feedback muss den Zeitpunkt der ersten Änderung enthalten.')
   }
   for (const [id, approval] of Object.entries(bundle.progress?.approvals ?? {})) {
     const packet = packets.get(id)
-    if (!packet) throw new Error('Approval references an unknown review packet.')
+    if (!packet) throw new Error('Die Freigabe verweist auf ein unbekanntes Prüfungspaket.')
     checkFeedback(packet, approval.feedback)
     const message = approvalError(packet, { ...approval, updated_at: approval.approved_at })
     if (message) throw new Error(message)
     const elapsed = approval.first_edited_at ? Date.parse(approval.approved_at) - Date.parse(approval.first_edited_at) : null
-    if (elapsed !== approval.editing_to_approval_ms || (elapsed !== null && elapsed < 0)) throw new Error('Approval timing is inconsistent.')
-    if (!sameReviewValue(approval.feedback, packet.generated_feedback) && !approval.first_edited_at) throw new Error('Edited approval must include its first-edit timestamp.')
+    if (elapsed !== approval.editing_to_approval_ms || (elapsed !== null && elapsed < 0)) throw new Error('Die Zeitangaben der Freigabe sind widersprüchlich.')
+    if (!sameReviewValue(approval.feedback, packet.generated_feedback) && !approval.first_edited_at) throw new Error('Eine bearbeitete Freigabe muss den Zeitpunkt der ersten Änderung enthalten.')
     const draft = bundle.progress?.drafts[id]
-    if (draft && approval.first_edited_at && draft.first_edited_at !== approval.first_edited_at) throw new Error('Draft and approval must preserve the same first-edit timestamp.')
+    if (draft && approval.first_edited_at && draft.first_edited_at !== approval.first_edited_at) throw new Error('Entwurf und Freigabe müssen denselben Zeitpunkt der ersten Änderung enthalten.')
   }
   return structuredClone(bundle)
 }
@@ -160,7 +160,7 @@ export function approveReview(packet: ReviewPacket, draft: ReviewDraft, now: str
   const message = approvalError(packet, draft)
   if (message) throw new Error(message)
   const elapsed = draft.first_edited_at ? Date.parse(now) - Date.parse(draft.first_edited_at) : null
-  if (elapsed !== null && elapsed < 0) throw new Error('Approval time is earlier than first edit. Check the device clock.')
+  if (elapsed !== null && elapsed < 0) throw new Error('Die Freigabe liegt vor der ersten Änderung. Prüfen Sie die Uhrzeit Ihres Geräts.')
   return { feedback: structuredClone(draft.feedback), decision: draft.decision!, first_edited_at: draft.first_edited_at, approved_at: now, editing_to_approval_ms: elapsed }
 }
 

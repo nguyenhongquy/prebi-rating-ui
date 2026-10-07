@@ -13,7 +13,7 @@ import {
 import { AppShell, EvaluationStart, PacketFileButton } from './AppShell'
 import './RatingWorkbench.css'
 import SourceComparison from './SourceComparison'
-import { type Draft, type Packet, type RatingTask, type ScoreAnswer, type SpanComment } from './ratingTypes'
+import { componentLabels, type Draft, type Packet, type RatingTask, type ScoreAnswer, type SpanComment } from './ratingTypes'
 import { answerError, canonicalJson, evaluationSteps, responseForDraft, submissionState } from './ratingValidation'
 import RatingProgress from './RatingProgress'
 import PacketNavigator from './PacketNavigator'
@@ -35,12 +35,13 @@ type SavedRating = {
 }
 
 const TASK_LABELS: Record<RatingTask, string> = {
-  feedback_implied_score: 'Feedback-implied score',
-  assessment_quality: 'Assessment quality',
-  feedback_quality: 'Feedback quality',
+  feedback_implied_score: 'Aus Feedback abgeleiteter Punktwert',
+  assessment_quality: 'Qualität der Einschätzung',
+  feedback_quality: 'Feedbackqualität',
 }
 const STORAGE_KEY = 'prebi-rating-workbench-v1'
 const TAGS = ['unsupported', 'inaccurate', 'vague', 'actionable', 'strength', 'concern', 'other']
+const TAG_LABELS: Record<string, string> = { unsupported: 'Nicht belegt', inaccurate: 'Unzutreffend', vague: 'Unklar', actionable: 'Handlungsorientiert', strength: 'Stärke', concern: 'Bedenken', other: 'Sonstiges' }
 
 function emptyDraft(packet: Packet): Draft {
   return {
@@ -103,7 +104,7 @@ export default function RatingWorkbench() {
     catch { return {} }
   })
   const [error, setError] = useState('')
-  const [status, setStatus] = useState('Upload the protected packet bundle to begin.')
+  const [status, setStatus] = useState('Öffnen Sie das geschützte Bewertungspaket, um zu beginnen.')
   const [selectedSpan, setSelectedSpan] = useState<{ component: string; index: number; start: number; end: number; quote: string } | null>(null)
   const [spanComment, setSpanComment] = useState('')
   const [spanTags, setSpanTags] = useState<string[]>([])
@@ -165,7 +166,7 @@ export default function RatingWorkbench() {
   function nextCriterion() {
     if (!packet || !draft) return
     if (!evaluatorId.trim()) {
-      setError('Enter your annotator code before rating.')
+      setError('Geben Sie Ihren Bewertungscode ein, bevor Sie bewerten.')
       return
     }
     const message = answerError(packet, draft, criterionIndex)
@@ -212,7 +213,7 @@ export default function RatingWorkbench() {
       setReviewingComplete(false)
       const firstTask = (shuffled[0]?.task ?? 'feedback_implied_score') as RatingTask
       setTaskFilter(firstTask)
-      setStatus(`Loaded ${shuffled.length} blinded packets. Order randomized for this session.`)
+      setStatus(`${shuffled.length} verblindete Pakete geladen. Die Reihenfolge wurde für diese Sitzung zufällig festgelegt.`)
     } catch (caught) {
       setError(caught instanceof SyntaxError ? 'Die Datei enthält kein gültiges JSON.' : caught instanceof Error ? caught.message : 'Die Paketdatei konnte nicht gelesen werden.')
     }
@@ -220,7 +221,7 @@ export default function RatingWorkbench() {
 
   function submitRating() {
     if (!packet || !draft || !evaluatorId.trim()) {
-      setError('Enter your annotator code before submitting.')
+      setError('Geben Sie Ihren Bewertungscode ein, bevor Sie die Bewertung abschließen.')
       return
     }
     for (let index = 0; index < steps.length; index++) {
@@ -248,7 +249,7 @@ export default function RatingWorkbench() {
     }
     setSubmitted((current) => ({ ...current, [currentKey]: record }))
     setError('')
-    setStatus('Rating submitted and saved in this browser. Download the result JSON for protected collection.')
+    setStatus('Bewertung abgeschlossen und lokal gespeichert. Exportieren Sie die Ergebnisse für die geschützte Datensammlung.')
     setReviewingComplete(false)
     for (let offset = 1; offset < taskPackets.length; offset++) {
       const nextIndex = (packetIndex + offset) % taskPackets.length
@@ -312,48 +313,49 @@ export default function RatingWorkbench() {
     setSubmitted({})
     setCriterionIndex(0)
     setReviewingComplete(false)
-    setStatus('Local drafts and submissions cleared.')
+    setStatus('Lokale Entwürfe und abgeschlossene Bewertungen wurden gelöscht.')
   }
 
   const savedForEvaluator = Object.values(submitted).filter((rating) => rating.evaluator_id === evaluatorId.trim())
 
-  return <AppShell workflow="Expert evaluation" context={packets.length > 0 ? <><span>{TASK_LABELS[taskFilter]} · {doneCount} / {taskPackets.length} current submissions</span><label className="annotator-field">Annotator code<input value={evaluatorId} onChange={(event) => setEvaluatorId(event.target.value)} placeholder="Your assigned code" autoComplete="off" /></label></> : undefined}>
+  return <AppShell workflow="Expert evaluation" context={packets.length > 0 ? <><span>{TASK_LABELS[taskFilter]} · {doneCount} / {taskPackets.length} aktuelle Bewertungen</span><label className="annotator-field">Bewertungscode<input value={evaluatorId} onChange={(event) => setEvaluatorId(event.target.value)} placeholder="Ihr zugewiesener Code" autoComplete="off" /></label></> : undefined}>
     {(!packet || showCompletion) && error && <div className="rating-error" role="alert">{error}</div>}
     {!packets.length ? <EvaluationStart evaluatorId={evaluatorId} onEvaluatorChange={setEvaluatorId} onImport={importPacketFile} savedCount={savedForEvaluator.length} onExportSaved={() => downloadJson('ratings-stored.json', { schema_version: '1.0.0', ratings: savedForEvaluator })} onClear={clearLocalData} /> : <>
     <div className="rating-toolbar">
-      <div className="task-tabs" role="tablist" aria-label="Rating task">
+      <div className="task-tabs" role="tablist" aria-label="Bewertungsaufgabe">
         {(Object.keys(TASK_LABELS) as RatingTask[]).map((task) => <button key={task} role="tab" aria-selected={taskFilter === task} className={taskFilter === task ? 'active' : ''} onClick={() => setTaskFilter(task)}>{TASK_LABELS[task]}</button>)}
       </div>
       <details className="file-management">
-        <summary><FileJson size={18} />Files &amp; local data</summary>
+        <summary><FileJson size={18} />Dateien &amp; lokale Daten</summary>
         <div className="rating-actions">
         <PacketFileButton onImport={importPacketFile} />
-        <button className="icon-button" onClick={downloadCompleted} disabled={!taskPackets.some(item => submitted[queueKey(item, evaluatorId)])} title="Download submitted ratings; pending draft edits are not included"><Download size={16} /><span>Export submitted ratings</span></button>
-        <button className="icon-button danger" onClick={clearLocalData} title="Clear local drafts and submitted ratings"><Trash2 size={16} /><span>Clear local data</span></button>
+        <button className="icon-button" onClick={downloadCompleted} disabled={!taskPackets.some(item => submitted[queueKey(item, evaluatorId)])} title="Abgeschlossene Bewertungen exportieren; ausstehende Entwurfsänderungen sind nicht enthalten"><Download size={16} /><span>Abgeschlossene Bewertungen exportieren</span></button>
+        <button className="icon-button danger" onClick={clearLocalData} title="Lokale Entwürfe und abgeschlossene Bewertungen löschen"><Trash2 size={16} /><span>Lokale Daten löschen</span></button>
         </div>
       </details>
     </div>
-    <div className="rating-status"><ShieldCheck size={16} />{status} Drafts and submissions stay in this browser until downloaded.</div>
-    {showCompletion ? <EvaluationComplete bundleComplete={bundleComplete} taskLabel={TASK_LABELS[taskFilter]} taskTotal={taskPackets.length} packetTotal={packets.length} summaries={summaries} onExport={bundleComplete ? downloadBundle : downloadCompleted} onReview={() => setReviewingComplete(true)} onContinue={continueNextTask} /> : !packet ? <div className="rating-empty"><FileJson size={34} /><strong>No packet for this task</strong><span>Upload the protected packet bundle to start annotating.</span></div> : <div className="rating-layout">
+    <div className="rating-status"><ShieldCheck size={16} />{status} Entwürfe und Bewertungen bleiben bis zum Export lokal in diesem Browser.</div>
+    {showCompletion ? <EvaluationComplete bundleComplete={bundleComplete} taskLabel={TASK_LABELS[taskFilter]} taskTotal={taskPackets.length} packetTotal={packets.length} summaries={summaries} onExport={bundleComplete ? downloadBundle : downloadCompleted} onReview={() => setReviewingComplete(true)} onContinue={continueNextTask} /> : !packet ? <div className="rating-empty"><FileJson size={34} /><strong>Kein Paket für diese Aufgabe</strong><span>Öffnen Sie das geschützte Bewertungspaket, um zu beginnen.</span></div> : <div className="rating-layout">
       <PacketNavigator label={TASK_LABELS[taskFilter]} states={packetStates} activeIndex={packetIndex} onNavigate={setPacketIndex}>
-        <details className="protocol-details"><summary>Rating guide · {packet.protocol_version}</summary><pre>{packet.human_protocol}</pre></details>
-        <details className="rubric-details"><summary>Rubric · {packet.rubric.version}</summary>{packet.rubric.dimensions.map((dimension) => <div className="rubric-dimension" key={dimension.dimension_id}><strong>{dimension.dimension_id} · {dimension.name}</strong><p>{dimension.description}</p><dl>{Object.entries(dimension.bands).map(([band, description]) => <div key={band}><dt>{band}</dt><dd>{description}</dd></div>)}</dl></div>)}</details>
+        <details className="protocol-details"><summary>Bewertungsleitfaden · {packet.protocol_version}</summary><pre>{packet.human_protocol}</pre></details>
+        <details className="rubric-details"><summary>Bewertungsraster · {packet.rubric.version}</summary>{packet.rubric.dimensions.map((dimension) => <div className="rubric-dimension" key={dimension.dimension_id}><strong>{dimension.dimension_id} · {dimension.name}</strong><p>{dimension.description}</p><dl>{Object.entries(dimension.bands).map(([band, description]) => <div key={band}><dt>{band}</dt><dd>{description}</dd></div>)}</dl></div>)}</details>
       </PacketNavigator>
       <main className="rating-main">
-        <SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} />
-        <section className="task-panel" aria-label="Your evaluation">
-          <div className="panel-title"><span>Your evaluation</span></div>
-          <RatingProgress packet={packet} draft={draft!} activeIndex={criterionIndex} onNavigate={navigateCriterion} />
-          {submitted[currentKey] && <p className={`submission-note${packetStates[packetIndex] === 'changed' ? ' pending' : ''}`} role="status">{packetStates[packetIndex] === 'changed' ? <Pencil size={18} /> : <Check size={18} />}{packetStates[packetIndex] === 'changed' ? 'Draft changes are not submitted. Update the rating to include them in exports.' : 'This rating is submitted.'}</p>}
+        <SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection}>
+        <section className="task-panel" aria-label="Ihre Bewertung">
+          <div className="panel-title"><span>Ihre Bewertung</span></div>
+          {packet.task === 'feedback_implied_score' ? <p className="draft-progress">{steps.filter((_, index) => !answerError(packet, draft!, index)).length} / {steps.length} Dimensionen vollständig</p> : <RatingProgress packet={packet} draft={draft!} activeIndex={criterionIndex} onNavigate={navigateCriterion} />}
+          {submitted[currentKey] && <p className={`submission-note${packetStates[packetIndex] === 'changed' ? ' pending' : ''}`} role="status">{packetStates[packetIndex] === 'changed' ? <Pencil size={18} /> : <Check size={18} />}{packetStates[packetIndex] === 'changed' ? 'Entwurfsänderungen sind noch nicht abgeschlossen. Speichern Sie die Bewertung erneut, um sie in den Export aufzunehmen.' : 'Diese Bewertung ist abgeschlossen.'}</p>}
           {error && <div className="rating-error" role="alert">{error}</div>}
-          {!!steps.length && <p className="criterion-position">{packet.task === 'feedback_implied_score' ? 'Dimension' : 'Criterion'} {criterionIndex + 1} of {steps.length}</p>}
+          {packet.task !== 'feedback_implied_score' && !!steps.length && <p className="criterion-position">Kriterium {criterionIndex + 1} von {steps.length}</p>}
           {packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft!} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={setSpanComment} addSpanComment={addSpanComment} /> : <QualityRating packet={packet} draft={draft!} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={setSpanComment} spanTags={spanTags} setSpanTags={setSpanTags} addSpanComment={addSpanComment} />}
         </section>
         <footer className="rating-footer">
-          <span><Save size={15} />{currentKey ? 'Autosaved locally' : 'Enter annotator code to save drafts'}</span>
-          <div>{submitted[currentKey] && <button className="icon-button" onClick={downloadCurrent}><Download size={16} />Download this rating</button>}<button className="icon-button" disabled={criterionIndex === 0} onClick={() => navigateCriterion(criterionIndex - 1)}><ChevronLeft size={16} />Previous {packet.task === 'feedback_implied_score' ? 'dimension' : 'criterion'}</button>{criterionIndex < steps.length - 1 ? <button className="submit-button" onClick={nextCriterion}><Save size={16} />Save &amp; next<ChevronRight size={16} /></button> : <button className="submit-button" onClick={submitRating}><Check size={16} />{submitted[currentKey] ? 'Update rating' : 'Submit rating'}</button>}</div>
-          {completionReady && <button className="icon-button" onClick={() => setReviewingComplete(false)}><Check size={16} />Show completion</button>}
+          <span><Save size={15} />{currentKey ? 'Automatisch lokal gespeichert' : 'Bewertungscode zum Speichern eingeben'}</span>
+          <div>{submitted[currentKey] && <button className="icon-button" onClick={downloadCurrent}><Download size={16} />Diese Bewertung herunterladen</button>}{packet.task !== 'feedback_implied_score' && <button className="icon-button" disabled={criterionIndex === 0} onClick={() => navigateCriterion(criterionIndex - 1)} title="Vorheriges Kriterium" aria-label="Vorheriges Kriterium"><ChevronLeft size={16} /></button>}{packet.task !== 'feedback_implied_score' && criterionIndex < steps.length - 1 ? <button className="submit-button" onClick={nextCriterion}><Save size={16} />Speichern &amp; weiter<ChevronRight size={16} /></button> : <button className="submit-button" onClick={submitRating}><Check size={16} />Speichern &amp; weiter</button>}</div>
+          {completionReady && <button className="icon-button" onClick={() => setReviewingComplete(false)}><Check size={16} />Abschlussübersicht anzeigen</button>}
         </footer>
+        </SourceComparison>
       </main>
     </div>}
     </>}
@@ -366,19 +368,18 @@ function ScoreCoding({ packet, draft, activeIndex, updateDraft, selectedSpan, sp
   spanComment: string; setSpanComment: (value: string) => void; addSpanComment: () => void
 }) {
   return <div>
-    {selectedSpan?.component === 'human_feedback' && <div className="span-editor"><strong>Selected evidence: “{selectedSpan.quote}”</strong><textarea value={spanComment} onChange={(event) => setSpanComment(event.target.value)} placeholder="Evidence note for this excerpt" rows={2} /><button className="icon-button" onClick={addSpanComment}>Add evidence note</button></div>}
-    <div className="score-grid">{(packet.score_dimensions ?? []).slice(activeIndex, activeIndex + 1).map((dimension) => {
+    {selectedSpan?.component === 'human_feedback' && <div className="span-editor"><strong>Ausgewählter Beleg: „{selectedSpan.quote}“</strong><textarea value={spanComment} onChange={(event) => setSpanComment(event.target.value)} placeholder="Belegnotiz zu diesem Textausschnitt" rows={2} /><button className="icon-button" onClick={addSpanComment}>Belegnotiz hinzufügen</button></div>}
+    <div className="score-grid">{(packet.score_dimensions ?? []).map((dimension, index) => {
       const answer = draft.scoreAnswers[dimension.dimension_id]
-      return <article className="score-card" key={dimension.dimension_id}>
+      return <article className="score-card" key={dimension.dimension_id} aria-current={index === activeIndex ? 'step' : undefined}>
         <header><span>{dimension.dimension_id}</span><strong>{dimension.label}</strong></header>
-        <label className="infer-toggle"><input type="checkbox" checked={answer.status === 'inferred_from_feedback'} onChange={(event) => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: event.target.checked ? { ...answer, status: 'inferred_from_feedback', confidence: 'medium' } : { status: 'not_inferable', score: null, confidence: 'not_inferable', rationale: answer.rationale, feedback_evidence: [] } } })} />Score inferable from feedback</label>
-        {answer.status === 'inferred_from_feedback' && <div className="two-column"><label className="field"><span>Implied score <small>0.0–3.0 in tenths</small></span><input type="number" min="0" max="3" step="0.1" value={answer.score ?? ''} onChange={(event) => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, score: event.target.value === '' ? null : Number(event.target.value) } } })} /></label><label className="field"><span>Confidence</span><select value={answer.confidence} onChange={(event) => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, confidence: event.target.value as ScoreAnswer['confidence'] } } })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label></div>}
-        <label className="field"><span>Rationale</span><textarea rows={3} value={answer.rationale} onChange={(event) => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, rationale: event.target.value } } })} /></label>
-        {selectedSpan?.component === 'human_feedback' && <button className="text-button use-evidence" onClick={() => { updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, feedback_evidence: [...answer.feedback_evidence, { start_character: selectedSpan.start, end_character: selectedSpan.end, quote: selectedSpan.quote }] } } }); }}>Use selected excerpt as evidence</button>}
-        {answer.feedback_evidence.map((evidence, index) => <p className="evidence-chip" key={`${evidence.start_character}-${index}`}>“{evidence.quote}” <button className="text-button" onClick={() => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, feedback_evidence: answer.feedback_evidence.filter((_, itemIndex) => itemIndex !== index) } } })}>Remove</button></p>)}
+        <fieldset className="score-status"><legend>{dimension.dimension_id} · Ableitbarkeit</legend>{(['inferred_from_feedback', 'not_inferable'] as const).map(status => <label key={status}><input type="radio" name={`status-${dimension.dimension_id}`} checked={answer.status === status} onChange={() => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: status === 'inferred_from_feedback' ? { ...answer, status, confidence: 'medium' } : { status, score: null, confidence: 'not_inferable', rationale: answer.rationale, feedback_evidence: [] } } })} />{status === 'not_inferable' ? 'Nicht ableitbar' : 'Punktwert ableitbar'}</label>)}</fieldset>
+        {answer.status === 'inferred_from_feedback' && <div className="two-column"><label className="field"><span>{dimension.dimension_id} · Punktwert <small>0,0–3,0</small></span><input type="number" min="0" max="3" step="0.1" value={answer.score ?? ''} onChange={(event) => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, score: event.target.value === '' ? null : Number(event.target.value) } } })} /></label><label className="field"><span>{dimension.dimension_id} · Sicherheit</span><select value={answer.confidence} onChange={(event) => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, confidence: event.target.value as ScoreAnswer['confidence'] } } })}><option value="low">Niedrig</option><option value="medium">Mittel</option><option value="high">Hoch</option></select></label></div>}
+        <label className="field"><span>{dimension.dimension_id} · Begründung <small>Erforderlich</small></span><textarea rows={2} required value={answer.rationale} onChange={(event) => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, rationale: event.target.value } } })} /></label>
+        {selectedSpan?.component === 'human_feedback' && <button className="text-button use-evidence" onClick={() => { updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, feedback_evidence: [...answer.feedback_evidence, { start_character: selectedSpan.start, end_character: selectedSpan.end, quote: selectedSpan.quote }] } } }); }}>Textausschnitt als Beleg übernehmen</button>}
+        {answer.feedback_evidence.map((evidence, index) => <p className="evidence-chip" key={`${evidence.start_character}-${index}`}>„{evidence.quote}“ <button className="text-button" onClick={() => updateDraft({ scoreAnswers: { ...draft.scoreAnswers, [dimension.dimension_id]: { ...answer, feedback_evidence: answer.feedback_evidence.filter((_, itemIndex) => itemIndex !== index) } } })}>Entfernen</button></p>)}
       </article>
     })}</div>
-    <p className="annotation-note">Selecting text in the feedback marks an evidence span. If no defensible score is implied, leave the score as not inferable rather than assigning zero.</p>
   </div>
 }
 
@@ -389,8 +390,8 @@ function QualityRating({ packet, draft, activeIndex, updateDraft, selectedSpan, 
 }) {
   return <div>
     {packet.task === 'feedback_quality' && <>
-      {selectedSpan && <div className="span-editor"><strong>Selected: “{selectedSpan.quote}”</strong><textarea value={spanComment} onChange={(event) => setSpanComment(event.target.value)} placeholder="Comment on this feedback span" rows={2} /><div className="tag-list">{TAGS.map((tag) => <label key={tag}><input type="checkbox" checked={spanTags.includes(tag)} onChange={(event) => setSpanTags(event.target.checked ? [...spanTags, tag] : spanTags.filter((value) => value !== tag))} />{tag}</label>)}</div><button className="icon-button" onClick={addSpanComment}>Add span comment</button></div>}
-      {!!draft.spanComments.length && <div className="span-list"><h3>Span comments ({draft.spanComments.length})</h3>{draft.spanComments.map((comment, index) => <div key={`${comment.feedback_component}-${comment.feedback_item_index}-${comment.start_character}-${index}`}><span>{comment.feedback_component} · “{feedbackText(packet, comment.feedback_component, comment.feedback_item_index).slice(comment.start_character, comment.end_character)}”</span><p>{comment.comment}</p></div>)}</div>}
+      {selectedSpan && <div className="span-editor"><strong>Ausgewählt: „{selectedSpan.quote}“</strong><textarea value={spanComment} onChange={(event) => setSpanComment(event.target.value)} placeholder="Kommentar zu diesem Feedbackausschnitt" rows={2} /><div className="tag-list">{TAGS.map((tag) => <label key={tag}><input type="checkbox" checked={spanTags.includes(tag)} onChange={(event) => setSpanTags(event.target.checked ? [...spanTags, tag] : spanTags.filter((value) => value !== tag))} />{TAG_LABELS[tag]}</label>)}</div><button className="icon-button" onClick={addSpanComment}>Kommentar hinzufügen</button></div>}
+      {!!draft.spanComments.length && <div className="span-list"><h3>Kommentare zu Textausschnitten ({draft.spanComments.length})</h3>{draft.spanComments.map((comment, index) => <div key={`${comment.feedback_component}-${comment.feedback_item_index}-${comment.start_character}-${index}`}><span>{componentLabels[comment.feedback_component] ?? comment.feedback_component} · „{feedbackText(packet, comment.feedback_component, comment.feedback_item_index).slice(comment.start_character, comment.end_character)}“</span><p>{comment.comment}</p></div>)}</div>}
     </>}
     <div className="quality-criteria">{(packet.criteria ?? []).slice(activeIndex, activeIndex + 1).map((criterion) => {
       const answer = draft.criterionRatings[criterion.criterion_id]
@@ -399,13 +400,13 @@ function QualityRating({ packet, draft, activeIndex, updateDraft, selectedSpan, 
       const scores = Array.from({ length: scaleMax - scaleMin + 1 }, (_, index) => scaleMin + index)
       const anchors = criterion.anchors ?? packet.scale?.anchors
       return <article className="criterion" key={criterion.criterion_id}>
-        <div className="criterion-heading"><div><h3>{criterion.label}</h3><p>{criterion.description}</p></div><label className="unable"><input type="checkbox" checked={answer.unable_to_judge} onChange={(event) => updateDraft({ criterionRatings: { ...draft.criterionRatings, [criterion.criterion_id]: { ...answer, score: event.target.checked ? null : answer.score, unable_to_judge: event.target.checked } } })} />Unable to judge</label></div>
-        <div className="score-buttons" role="group" aria-label={`${criterion.label} score`}>{scores.map((score) => <button key={score} title={anchors?.[String(score)]} className={answer.score === score && !answer.unable_to_judge ? 'chosen' : ''} disabled={answer.unable_to_judge} aria-pressed={answer.score === score && !answer.unable_to_judge} onClick={() => updateDraft({ criterionRatings: { ...draft.criterionRatings, [criterion.criterion_id]: { ...answer, score, unable_to_judge: false } } })}>{score}</button>)}</div>
-        {anchors && <dl className="criterion-anchors">{scores.map((score) => <div key={score}><dt>{score}</dt><dd>{anchors[String(score)]}</dd></div>)}</dl>}
-        <label className="field"><span>Rationale / comment <small>{answer.unable_to_judge ? 'Required' : 'Optional'}</small></span><textarea rows={2} value={answer.comment} onChange={(event) => updateDraft({ criterionRatings: { ...draft.criterionRatings, [criterion.criterion_id]: { ...answer, comment: event.target.value } } })} /></label>
+        <div className="criterion-heading"><div><h3>{criterion.label}</h3><p>{criterion.description}</p></div></div>
+        <div className="score-buttons" role="group" aria-label={`${criterion.label} · Punktwert`}>{scores.map((score) => <button key={score} className={answer.score === score && !answer.unable_to_judge ? 'chosen' : ''} aria-pressed={answer.score === score && !answer.unable_to_judge} onClick={() => updateDraft({ criterionRatings: { ...draft.criterionRatings, [criterion.criterion_id]: { ...answer, score, unable_to_judge: false } } })}><strong>{score}</strong><span>{anchors?.[String(score)] ?? `Punktwert ${score}`}</span></button>)}</div>
+        <label className="unable"><input type="checkbox" checked={answer.unable_to_judge} onChange={(event) => updateDraft({ criterionRatings: { ...draft.criterionRatings, [criterion.criterion_id]: { ...answer, score: event.target.checked ? null : answer.score, unable_to_judge: event.target.checked } } })} />Nicht beurteilbar</label>
+        {answer.unable_to_judge ? <label className="field"><span>Begründung <small>Erforderlich</small></span><textarea rows={2} required value={answer.comment} onChange={(event) => updateDraft({ criterionRatings: { ...draft.criterionRatings, [criterion.criterion_id]: { ...answer, comment: event.target.value } } })} /></label> : <details className="optional-comment"><summary>Kommentar{answer.comment ? ' · vorhanden' : ' · optional'}</summary><label className="field"><span>Begründung / Kommentar</span><textarea rows={2} value={answer.comment} onChange={(event) => updateDraft({ criterionRatings: { ...draft.criterionRatings, [criterion.criterion_id]: { ...answer, comment: event.target.value } } })} /></label></details>}
       </article>
     })}</div>
-    <label className="field overall-comment"><span>Overall comment <small>Optional</small></span><textarea rows={3} value={draft.overallComment} onChange={(event) => updateDraft({ overallComment: event.target.value })} /></label>
+    <label className="field overall-comment"><span>Gesamtkommentar <small>Optional</small></span><textarea rows={3} value={draft.overallComment} onChange={(event) => updateDraft({ overallComment: event.target.value })} /></label>
   </div>
 }
 

@@ -18,15 +18,15 @@ function editedDraft() {
 
 test('synthetic bundle passes separate schema and contains no rating protocol', () => {
   assert.equal(parseReviewBundle(example).packets.length, 2)
-  assert.throws(() => parseReviewBundle({ packets: example.packets }), /Invalid lecturer review bundle/)
-  assert.throws(() => parseReviewBundle({ ...example, schema_version: '2.0.0' }), /Invalid lecturer review bundle/)
+  assert.throws(() => parseReviewBundle({ packets: example.packets }), /Ungültiges Prüfungspaket/)
+  assert.throws(() => parseReviewBundle({ ...example, schema_version: '2.0.0' }), /Ungültiges Prüfungspaket/)
 })
 
 test('duplicate packet IDs and dangling evidence rejected', () => {
-  assert.throws(() => parseReviewBundle({ ...example, packets: [packet, packet] }), /unique/)
+  assert.throws(() => parseReviewBundle({ ...example, packets: [packet, packet] }), /eindeutig/)
   const bad = structuredClone(example)
   bad.packets[0].generated_feedback.strengths[0].evidence_segment_ids = ['unknown']
-  assert.throws(() => parseReviewBundle(bad), /unknown reflection segment/)
+  assert.throws(() => parseReviewBundle(bad), /unbekanntes Reflexionssegment/)
 })
 
 test('first edit recorded once and preserved through additional evidence edits', () => {
@@ -66,10 +66,10 @@ test('edited approval records wall-clock interval and immutable snapshot', () =>
 })
 
 test('decision requirements and earlier clock prevent approval', () => {
-  assert.match(approvalError(packet, initialReviewDraft(packet, first)), /Choose/)
-  assert.match(approvalError(packet, { ...editedDraft(), decision: 'use_as_generated' }), /restore/)
-  assert.match(approvalError(packet, { ...initialReviewDraft(packet, first), decision: 'use_with_edits' }), /Edit/)
-  assert.throws(() => approveReview(packet, editedDraft(), '2026-10-06T09:00:00.000Z'), /earlier/)
+  assert.match(approvalError(packet, initialReviewDraft(packet, first)), /Wählen Sie/)
+  assert.match(approvalError(packet, { ...editedDraft(), decision: 'use_as_generated' }), /wieder her/)
+  assert.match(approvalError(packet, { ...initialReviewDraft(packet, first), decision: 'use_with_edits' }), /Bearbeiten Sie/)
+  assert.throws(() => approveReview(packet, editedDraft(), '2026-10-06T09:00:00.000Z'), /vor der ersten Änderung/)
 })
 
 test('partial bundle export round trip preserves original, timestamps and evidence', () => {
@@ -88,11 +88,11 @@ test('unknown progress and inconsistent imported timestamps rejected', () => {
   const bundle = { ...example, progress: { reviewer_id: 'reviewer', drafts: { [packet.review_packet_id]: draft }, approvals: { [packet.review_packet_id]: approval } } }
   const invalidTiming = structuredClone(bundle)
   invalidTiming.progress.approvals[packet.review_packet_id].editing_to_approval_ms = 1
-  assert.throws(() => parseReviewBundle(invalidTiming), /timing/)
+  assert.throws(() => parseReviewBundle(invalidTiming), /Zeitangaben/)
   const missingFirst = structuredClone(bundle)
   missingFirst.progress.drafts[packet.review_packet_id].first_edited_at = null
-  assert.throws(() => parseReviewBundle(missingFirst), /first-edit/)
-  assert.throws(() => parseReviewBundle({ ...example, progress: { reviewer_id: 'reviewer', drafts: { unknown: draft }, approvals: {} } }), /unknown review packet/)
+  assert.throws(() => parseReviewBundle(missingFirst), /Zeitpunkt der ersten Änderung/)
+  assert.throws(() => parseReviewBundle({ ...example, progress: { reviewer_id: 'reviewer', drafts: { unknown: draft }, approvals: {} } }), /unbekanntes Prüfungspaket/)
 })
 
 test('unfinished blank draft items can be exported and resumed but not approved', () => {
@@ -100,16 +100,16 @@ test('unfinished blank draft items can be exported and resumed but not approved'
   draft.feedback.suggestions.push({ item_id: 'unfinished', text: '', evidence_segment_ids: [] })
   const bundle = { ...example, progress: { reviewer_id: 'reviewer', drafts: { [packet.review_packet_id]: draft }, approvals: {} } }
   assert.equal(parseReviewBundle(bundle).progress.drafts[packet.review_packet_id].feedback.suggestions.at(-1).text, '')
-  assert.match(approvalError(packet, draft), /blank/)
+  assert.match(approvalError(packet, draft), /leere Feedbackeinträge/)
 })
 
 test('generated blank items and duplicate segment numbers are rejected', () => {
   const blank = structuredClone(example)
   blank.packets[0].generated_feedback.strengths[0].text = ' '
-  assert.throws(() => parseReviewBundle(blank), /cannot be blank/)
+  assert.throws(() => parseReviewBundle(blank), /dürfen nicht leer sein/)
   const duplicate = structuredClone(example)
   duplicate.packets[0].reflection.segments[1].order = duplicate.packets[0].reflection.segments[0].order
-  assert.throws(() => parseReviewBundle(duplicate), /unique/)
+  assert.throws(() => parseReviewBundle(duplicate), /eindeutig/)
 })
 
 test('approval-only progress can resume without a draft snapshot', () => {
