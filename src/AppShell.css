@@ -1,0 +1,49 @@
+.app-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 28px; background: var(--ph-white); border-bottom: 1px solid var(--rating-line); }
+.app-identity { display: flex; align-items: center; gap: 24px; min-width: 0; }
+.institution-logo { display: block; width: 230px; height: 90px; object-fit: contain; }
+.app-name { min-width: 0; border-left: 1px solid var(--rating-line); padding-left: 24px; }
+.project-logo { display: block; width: 150px; max-width: 100%; height: auto; }
+.start-project-logo { width: 180px; margin-bottom: 20px; }
+.app-name p { margin: 4px 0 0; font-size: 14px; line-height: 1.5; }
+.app-context { display: grid; gap: 6px; text-align: right; font-size: 13px; }
+.app-context strong { color: var(--ph-moss); }
+.app-context span { line-height: 1.5; }
+.workflow-navigation { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; }
+.workflow-navigation a { color: var(--ph-moss); padding: 6px 0; text-underline-offset: 4px; }
+.workflow-navigation a[aria-current="page"] { font-weight: 700; text-decoration-thickness: 2px; }
+.workflow-navigation a:focus-visible { outline: 3px solid var(--ph-purple); outline-offset: 3px; }
+.evaluation-start { min-height: calc(100svh - 131px); padding: 56px 24px; background: linear-gradient(180deg, var(--ph-white) 0%, var(--ph-offwhite) 100%); }
+.start-content { width: min(100%, 540px); margin: 0 auto; }
+.start-content h1 { margin: 0; color: var(--ph-moss); font-size: 32px; line-height: 1.2; }
+.start-description { margin: 20px 0 28px; font-size: 18px; line-height: 1.65; }
+.start-annotator { width: min(100%, 340px); margin-bottom: 20px; }
+.start-annotator input { min-height: 44px; font-size: 16px; }
+.open-packet-button { min-height: 48px; padding: 12px 20px; font-size: 16px; }
+.packet-file-input { display: none; }
+.local-storage-note { margin: 20px 0 0; font-size: 14px; line-height: 1.6; }
+.start-storage-actions { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--rating-line); font-size: 14px; }
+.start-storage-actions summary { cursor: pointer; color: var(--ph-moss); font-weight: 600; }
+.start-storage-actions p { line-height: 1.5; }
+.file-management { position: relative; }
+.file-management summary { min-height: 44px; display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--ph-moss); font-size: 14px; font-weight: 600; }
+.file-management[open] .rating-actions { position: absolute; top: 100%; right: 0; z-index: 5; width: 280px; padding: 12px; background: white; border: 1px solid var(--rating-line); border-radius: 4px; box-shadow: 0 4px 12px #00000014; }
+.file-management .rating-actions > * { width: 100%; }
+@media (max-width: 760px) {
+  .app-header { align-items: flex-start; flex-direction: column; padding: 16px; gap: 16px; }
+  .app-identity { gap: 16px; width: 100%; }
+  .institution-logo { width: 170px; height: 68px; }
+  .app-name { padding-left: 16px; }
+  .app-name .project-logo { width: 110px; }
+  .app-name p { font-size: 12px; }
+  .app-context { text-align: left; }
+  .evaluation-start { padding: 36px 20px; }
+}
+@media (max-width: 380px) {
+  .institution-logo { width: 135px; height: 54px; }
+  .app-identity { gap: 12px; }
+  .app-name { padding-left: 12px; }
+}
+@media (max-width: 700px) {
+  .file-management { width: 100%; }
+  .file-management[open] .rating-actions { width: 100%; }
+}

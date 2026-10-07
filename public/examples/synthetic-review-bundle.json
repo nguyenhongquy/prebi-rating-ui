@@ -1,0 +1,34 @@
+{
+  "kind": "prebi_lecturer_review_bundle",
+  "schema_version": "1.0.0",
+  "bundle_id": "synthetic-lecturer-review-001",
+  "packets": [
+    {
+      "review_packet_id": "synthetic-review-01",
+      "source_reference": "synthetic-reflection-01",
+      "reflection": { "segments": [
+        { "segment_id": "synthetic-01-33", "order": 32, "text": "Die Kinder verglichen ihre Ergebnisse und diskutierten unterschiedliche Lösungswege." },
+        { "segment_id": "synthetic-01-34", "order": 33, "text": "Einige Kinder benötigten zusätzliche Fragen, um ihre Entscheidungen zu begründen." },
+        { "segment_id": "synthetic-01-35", "order": 34, "text": "Beim nächsten Mal möchte ich die Aufgabenstellung gemeinsam erproben und Rückfragen dokumentieren." }
+      ] },
+      "generated_feedback": {
+        "strengths": [{ "item_id": "strength-01", "text": "Sie beschreiben unterschiedliche Lösungswege anhand konkreter Beobachtungen.", "evidence_segment_ids": ["synthetic-01-33"] }],
+        "weaknesses": [{ "item_id": "need-01", "text": "Die Ursachen für die unterschiedlichen Schwierigkeiten bleiben offen.", "evidence_segment_ids": ["synthetic-01-34"] }],
+        "suggestions": [{ "item_id": "step-01", "text": "Erproben Sie die Aufgabenstellung gemeinsam und vergleichen Sie die Rückfragen.", "evidence_segment_ids": ["synthetic-01-35"] }]
+      }
+    },
+    {
+      "review_packet_id": "synthetic-review-02",
+      "source_reference": "synthetic-reflection-02",
+      "reflection": { "segments": [
+        { "segment_id": "synthetic-02-01", "order": 0, "text": "Die Abschlussrunde machte unterschiedliche Perspektiven sichtbar." },
+        { "segment_id": "synthetic-02-02", "order": 1, "text": "Für eine vertiefte Reflexion fehlte die Zeit. Ich möchte künftig eine kurze schriftliche Rückmeldung einplanen." }
+      ] },
+      "generated_feedback": {
+        "strengths": [{ "item_id": "strength-02", "text": "Sie erkennen unterschiedliche Perspektiven in der Abschlussrunde.", "evidence_segment_ids": ["synthetic-02-01"] }],
+        "weaknesses": [],
+        "suggestions": [{ "item_id": "step-02", "text": "Planen Sie Zeit für eine schriftliche Reflexion ein.", "evidence_segment_ids": ["synthetic-02-02"] }]
+      }
+    }
+  ]
+}

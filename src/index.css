@@ -1,0 +1,28 @@
+@font-face { font-family: Figtree; src: url('../public/fonts/Figtree/Figtree-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: Figtree; src: url('../public/fonts/Figtree/Figtree-Medium.ttf') format('truetype'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: Figtree; src: url('../public/fonts/Figtree/Figtree-SemiBold.ttf') format('truetype'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: Figtree; src: url('../public/fonts/Figtree/Figtree-Bold.ttf') format('truetype'); font-weight: 700 900; font-style: normal; font-display: swap; }
+
+:root {
+  --ph-moss: #002d20;
+  --ph-green: #115933;
+  --ph-leaf: #b1edbf;
+  --ph-offwhite: #e7ede6;
+  --ph-white: #ffffff;
+  --ph-black: #000000;
+  --ph-lilac: #d7d9ff;
+  --ph-purple: #4309bb;
+  font-family: Figtree, Arial, sans-serif;
+  color: var(--ph-black);
+  background: var(--ph-offwhite);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  letter-spacing: 0;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input, textarea, select { font: inherit; letter-spacing: 0; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--ph-purple); outline-offset: 3px; }
+pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
