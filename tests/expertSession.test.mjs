@@ -19,7 +19,7 @@ try {
   rmSync(directory, { recursive: true, force: true })
 }
 const { bundleHash, validateSession, validateDraft, validatePackets, assertSourcesMatch, draftFromResponse, checkPacketHashes, sessionKey, expertCaseState, legacyDraft, emptyConsensus, consensusCaseState, consensusAnswerErrors, finalizeConsensus, flagConsensus, resumeConsensus, reopenConsensus, researchExportPackets, consensusResearchExport, filteredConsensusIndexes, assertConsensusBlinding } = helpers
-const { emptyDraft, caseState, responseForDraft, answerError } = validation
+const { emptyDraft, caseState, responseForDraft, answerError, REFERENCE_SCORE_SCALE } = validation
 const packets = validatePackets(JSON.parse(readFileSync(new URL('../public/examples/synthetic-evaluation-bundle.json', import.meta.url), 'utf8')).packets)
 const reference = packets.find(packet => packet.task === 'reflection_reference_score')
 const implied = packets.find(packet => packet.task === 'feedback_implied_score')
@@ -43,6 +43,7 @@ test('partial session round-trips unanswered dimensions, nulls, identity and ord
   const session = await fresh()
   session.drafts[quality.packet_id].overallComment = 'Partial comment'
   session.drafts[reference.packet_id].referenceAnswers.SW.rationale = 'Vorläufige Begründung.'
+  session.drafts[reference.packet_id].referenceAnswers.UA.score = 1.5
   session.drafts[reference.packet_id].referenceAnswers.SW.evidence_segment_ids = [reference.reflection.segments[1].segment_id]
   session.active_task = 'reflection_reference_score'
   session.active_criterion = 2
@@ -52,6 +53,7 @@ test('partial session round-trips unanswered dimensions, nulls, identity and ord
   assert.equal(restored.drafts[implied.packet_id].scoreAnswers.SW.score, null)
   assert.equal(caseState(quality, restored.drafts[quality.packet_id]), 'in_progress')
   assert.equal(restored.drafts[reference.packet_id].referenceAnswers.SW.score, null)
+  assert.equal(restored.drafts[reference.packet_id].referenceAnswers.UA.score, 1.5)
   assert.equal(caseState(reference, restored.drafts[reference.packet_id]), 'in_progress')
   assert.equal(restored.active_task, 'reflection_reference_score')
   assert.equal(restored.active_criterion, 2)
@@ -77,6 +79,13 @@ test('reference packets accept annotations but reject dangling, unknown, or outp
   assert.throws(() => validatePackets([invalidBands]), /numerische Punktwertanker/)
 })
 
+test('legacy integer anchor metadata stays compatible while incompatible declared scales fail', () => {
+  const legacyScale = { min: 0, max: 3, anchors: { '0': 'Null', '1': 'Eins', '2': 'Zwei', '3': 'Drei' } }
+  assert.equal(validatePackets([{ ...reference, scale: legacyScale }])[0].scale.step, undefined)
+  assert.throws(() => validatePackets([{ ...reference, scale: { ...legacyScale, step: 1 } }]), /inkompatible Punktwertskala/)
+  assert.throws(() => validatePackets([{ ...reference, scale: { ...legacyScale, id: 'integer-only-v1' } }]), /inkompatible Punktwertskala/)
+})
+
 test('reference drafts distinguish unanswered from score zero and validate rubric and evidence IDs', async () => {
   const draft = emptyDraft(reference)
   assert.equal(draft.referenceAnswers.SW.score, null)
@@ -85,9 +94,18 @@ test('reference drafts distinguish unanswered from score zero and validate rubri
   draft.referenceAnswers.SW.score = 0
   assert.equal(answerError(reference, draft, 0), null)
   assert.equal(caseState(reference, draft), 'in_progress')
+  for (const score of [0.5, 1, 1.5, 2, 2.5, 3]) {
+    draft.referenceAnswers.SW.score = score
+    assert.equal(answerError(reference, draft, 0), null)
+    assert.deepEqual(validateDraft(reference, draft), draft)
+  }
+  for (const score of [2.1, 2.9, -0.5, 3.5, NaN, Infinity]) {
+    assert.ok(answerError(reference, { ...draft, referenceAnswers: { ...draft.referenceAnswers, SW: { ...draft.referenceAnswers.SW, score } } }, 0))
+    assert.throws(() => validateDraft(reference, { ...draft, referenceAnswers: { ...draft.referenceAnswers, SW: { ...draft.referenceAnswers.SW, score } } }))
+  }
   draft.referenceAnswers.SW.evidence_segment_ids = [reference.reflection.segments[0].segment_id]
   assert.deepEqual(validateDraft(reference, draft), draft)
-  assert.throws(() => validateDraft(reference, { ...draft, referenceAnswers: { ...draft.referenceAnswers, SW: { ...draft.referenceAnswers.SW, score: 4 } } }), /Bewertungsraster/)
+  assert.throws(() => validateDraft(reference, { ...draft, referenceAnswers: { ...draft.referenceAnswers, SW: { ...draft.referenceAnswers.SW, score: 4 } } }), /Schritten von 0,5/)
   assert.throws(() => validateDraft(reference, { ...draft, referenceAnswers: { ...draft.referenceAnswers, SW: { ...draft.referenceAnswers.SW, evidence_segment_ids: ['missing'] } } }), /Reflexionsbelege/)
 })
 
@@ -101,6 +119,10 @@ test('reference responses export and restore independently from feedback-implied
   assert.deepEqual(response.scores[0], { dimension_id: 'SW', score: 0, rationale: '', evidence_segment_ids: [reference.reflection.segments[0].segment_id] })
   assert.deepEqual(draftFromResponse(reference, response).referenceAnswers, draft.referenceAnswers)
   assert.throws(() => draftFromResponse(reference, { scores: [{ dimension_id: 'SW', status: 'inferred_from_feedback' }] }), /Referenzdimensionen/)
+  const decimalDraft = structuredClone(draft)
+  decimalDraft.referenceAnswers.SW.score = 2.5
+  assert.equal(responseForDraft(reference, decimalDraft).scores[0].score, 2.5)
+  assert.equal(draftFromResponse(reference, responseForDraft(reference, decimalDraft)).referenceAnswers.SW.score, 2.5)
 })
 
 test('legacy drafts without referenceAnswers restore with an empty task-specific map', async () => {
@@ -129,6 +151,49 @@ test('consensus sessions version panel identity and records without reinterpreti
   await assert.rejects(validateSession({ ...session, evaluator_id: 'expert panel', panel_id: 'expert panel' }), /pseudonymer Bezeichner/)
 })
 
+test('synthetic consensus bundle imports as six blinded primary-task cases', async () => {
+  const basePackets = JSON.parse(readFileSync(new URL('../public/examples/synthetic-evaluation-bundle.json', import.meta.url), 'utf8')).packets
+  const primaryTasks = ['reflection_reference_score', 'assessment_quality', 'feedback_quality']
+  const bundle = { synthetic: true, packets: primaryTasks.flatMap(task => [1, 2].map(index => ({
+    ...structuredClone(basePackets.find(packet => packet.task === task)),
+    packet_id: `synthetic-consensus-${task}-${index}`,
+  }))) }
+  const consensusPackets = validatePackets(bundle.packets)
+  assert.equal(consensusPackets.length, 6)
+  assert.equal(new Set(consensusPackets.map(packet => packet.packet_id)).size, 6)
+  assert.deepEqual(consensusPackets.map(packet => packet.task).sort(), [
+    'assessment_quality', 'assessment_quality',
+    'feedback_quality', 'feedback_quality',
+    'reflection_reference_score', 'reflection_reference_score',
+  ])
+  assert.ok(consensusPackets.every(packet => packet.condition_blinded && packet.packet_id.startsWith('synthetic-consensus-')))
+  for (const packet of consensusPackets.filter(item => item.task === 'reflection_reference_score')) {
+    assert.equal(Object.hasOwn(packet, 'output'), false)
+    assert.equal(Object.hasOwn(packet, 'human_feedback'), false)
+    const segmentIds = new Set(packet.reflection.segments.map(segment => segment.segment_id))
+    assert.ok(packet.segment_annotations.some(annotation => annotation.segment_id === packet.reflection.segments[1].segment_id))
+    assert.ok(packet.segment_annotations.every(annotation => segmentIds.has(annotation.segment_id)))
+  }
+  for (const packet of consensusPackets.filter(item => item.task !== 'reflection_reference_score')) {
+    const segmentIds = new Set(packet.reflection.segments.map(segment => segment.segment_id))
+    const referencedIds = packet.task === 'assessment_quality'
+      ? packet.output.dimensions.flatMap(dimension => dimension.evidence_segment_ids)
+      : Object.values(packet.output).flatMap(items => items.flatMap(item => item.evidence_segment_ids ?? []))
+    assert.ok(referencedIds.every(id => segmentIds.has(id)))
+  }
+  assertConsensusBlinding(consensusPackets)
+  const session = await validateSession({
+    kind: 'prebi_expert_session', schema_version: '1.1.0', evaluator_id: 'synthetic-panel-01',
+    evaluation_mode: 'expert_consensus', panel_id: 'synthetic-panel-01', bundle_sha256: await bundleHash(consensusPackets),
+    packets: consensusPackets,
+    drafts: Object.fromEntries(consensusPackets.map(packet => [packet.packet_id, emptyDraft(packet)])),
+    pending_editors: {}, consensus: emptyConsensus(consensusPackets),
+    active_task: 'reflection_reference_score', active_index: 0, active_criterion: 0,
+  })
+  assert.equal(session.evaluation_mode, 'expert_consensus')
+  assert.equal(Object.keys(session.consensus).length, 6)
+})
+
 test('complete answers remain unfinalized until explicit consensus confirmation', async () => {
   const session = await freshConsensus()
   completeDraft(reference, session.drafts[reference.packet_id])
@@ -154,6 +219,7 @@ test('all three primary task packets use their own completeness rules before fin
 test('valid consensus finalizes explicitly, flags stay out of export, and reopening retains answers and history', async () => {
   const session = await freshConsensus()
   completeDraft(reference, session.drafts[reference.packet_id])
+  session.drafts[reference.packet_id].referenceAnswers.SW.score = 2.5
   const finalizedAt = '2026-10-12T10:30:00Z'
   session.consensus[reference.packet_id] = finalizeConsensus(session.consensus[reference.packet_id], reference, session.drafts[reference.packet_id], session.panel_id, finalizedAt)
   session.consensus[quality.packet_id] = flagConsensus(session.consensus[quality.packet_id])
@@ -166,7 +232,9 @@ test('valid consensus finalizes explicitly, flags stay out of export, and reopen
   assert.deepEqual(exported.panel_members, session.panel_members)
   assert.equal(exported.ratings.length, 1)
   assert.equal(exported.ratings[0].schema_version, '1.1.0')
+  assert.equal(exported.ratings[0].scoring_scale_id, REFERENCE_SCORE_SCALE.id)
   assert.deepEqual(exported.ratings[0].response, responseForDraft(reference, session.drafts[reference.packet_id]))
+  assert.equal(exported.ratings[0].response.scores.find(answer => answer.dimension_id === 'SW').score, 2.5)
   assert.equal(exported.ratings[0].consensus.status, 'finalized')
   assert.equal(exported.ratings[0].submitted_at, finalizedAt)
   const answers = structuredClone(session.drafts[reference.packet_id])
@@ -176,6 +244,10 @@ test('valid consensus finalizes explicitly, flags stay out of export, and reopen
   assert.deepEqual(session.consensus[reference.packet_id].finalization_history, [{ finalized_at: finalizedAt, finalized_by: session.panel_id }])
   assert.deepEqual(session.drafts[reference.packet_id], answers)
   assert.deepEqual(researchExportPackets(session), [])
+  session.drafts[reference.packet_id].referenceAnswers.SW.score = 1.5
+  assert.equal(consensusCaseState(reference, session), 'in_progress')
+  session.consensus[reference.packet_id] = finalizeConsensus(session.consensus[reference.packet_id], reference, session.drafts[reference.packet_id], session.panel_id, '2026-10-12T11:30:00Z')
+  assert.equal(consensusResearchExport(session, () => 'edited-rating-id').ratings[0].response.scores.find(answer => answer.dimension_id === 'SW').score, 1.5)
   assert.equal(resumeConsensus(session.consensus[quality.packet_id]).status, 'in_progress')
   assert.throws(() => flagConsensus({ ...session.consensus[reference.packet_id], status: 'finalized' }), /zuerst zur Bearbeitung geöffnet/)
 })

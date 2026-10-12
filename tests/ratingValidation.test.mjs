@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-const { answerError, canonicalJson, evaluationSteps, responseForDraft, submissionState, emptyDraft, caseState } = await import(process.env.PREBI_RATING_VALIDATION_MODULE)
+const { answerError, canonicalJson, evaluationSteps, responseForDraft, submissionState, emptyDraft, caseState, isValidReferenceScore, parseReferenceScoreInput, referenceAnchorScores, REFERENCE_SCORE_SCALE } = await import(process.env.PREBI_RATING_VALIDATION_MODULE)
 const packet = {
   packet_id: 'synthetic', task: 'assessment_quality', packet_version: '1.0.0',
   protocol_id: 'synthetic', protocol_version: '0.3.0', human_protocol: 'Original guide',
@@ -100,6 +100,33 @@ test('unanswered dimensions remain distinct from intentionally not inferable', (
 })
 
 const syntheticBundle = JSON.parse(readFileSync(new URL('../public/examples/synthetic-evaluation-bundle.json', import.meta.url), 'utf8'))
+const referencePacket = syntheticBundle.packets.find(item => item.task === 'reflection_reference_score')
+
+test('reference score validation accepts seven half steps and distinguishes null from zero', () => {
+  for (const score of [0, 0.5, 1, 1.5, 2, 2.5, 3]) assert.equal(isValidReferenceScore(score), true)
+  for (const score of [-0.5, 3.5, 2.1, 2.9, 1.75, NaN, Infinity, '2.5']) assert.equal(isValidReferenceScore(score), false)
+  assert.deepEqual(parseReferenceScoreInput(''), { score: null, valid: true })
+  assert.deepEqual(parseReferenceScoreInput('2,5'), { score: 2.5, valid: true })
+  assert.equal(parseReferenceScoreInput('2.1').valid, false)
+  assert.equal(parseReferenceScoreInput('invalid').valid, false)
+  assert.equal(REFERENCE_SCORE_SCALE.step, 0.5)
+  const initial = emptyDraft(referencePacket)
+  assert.equal(initial.referenceAnswers.SW.score, null)
+  assert.match(answerError(referencePacket, initial, 0), /Punktwert/)
+  initial.referenceAnswers.SW.score = 0
+  assert.equal(answerError(referencePacket, initial, 0), null)
+})
+
+test('reference rubric anchors select exact or surrounding levels and UI controls share the score setter', () => {
+  assert.deepEqual(referenceAnchorScores(1.5, [0, 1, 2, 3]), [1, 2])
+  assert.deepEqual(referenceAnchorScores(2.5, [0, 1, 2, 3]), [2, 3])
+  assert.deepEqual(referenceAnchorScores(3, [0, 1, 2, 3]), [3])
+  const source = readFileSync(new URL('../src/RatingWorkbench.tsx', import.meta.url), 'utf8')
+  assert.match(source, /type="range" min=\{scale\.min\} max=\{scale\.max\} step=\{scale\.step/)
+  assert.match(source, /onChange=\{event => setReferenceScore\(Number\(event\.currentTarget\.value\)\)\}/)
+  assert.match(source, /onChange=\{event => editReferenceScore\(event\.currentTarget\.value\)\}/)
+  assert.match(source, /selectedAnchors\.has\(Number\(score\)\)/)
+})
 
 test('public synthetic evaluation bundle covers all tasks with valid source references', () => {
   assert.equal(syntheticBundle.synthetic, true)
@@ -161,4 +188,6 @@ test('reference scoring omits the generated-output viewer', () => {
   const source = readFileSync(new URL('../src/SourceComparison.tsx', import.meta.url), 'utf8')
   assert.match(source, /const reflectionOnly = packet\.task === 'reflection_reference_score'/)
   assert.match(source, /!reflectionOnly && <OutputViewer/)
+  assert.doesNotMatch(source, /annotation\.skill_label/)
+  assert.ok(referencePacket.segment_annotations.every(annotation => !Object.hasOwn(annotation, 'skill_label')))
 })

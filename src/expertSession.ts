@@ -1,5 +1,5 @@
 import type { ConsensusCaseState, ConsensusHistoryEntry, ConsensusRecord, Draft, Packet, RatingTask } from './ratingTypes'
-import { answerError, canonicalJson, caseState, emptyDraft, evaluationSteps, responseForDraft } from './ratingValidation'
+import { answerError, canonicalJson, caseState, emptyDraft, evaluationSteps, isValidReferenceScore, REFERENCE_SCORE_SCALE, responseForDraft } from './ratingValidation'
 
 export type PendingEditor = {
   selection: { component: string; index: number; start: number; end: number; quote: string } | null
@@ -154,6 +154,7 @@ export function consensusResearchExport(session: ExpertSession, createRatingId: 
       evaluator_id: session.panel_id,
       protocol_id: packet.protocol_id,
       protocol_version: packet.protocol_version,
+      ...(packet.task === 'reflection_reference_score' ? { scoring_scale_id: REFERENCE_SCORE_SCALE.id } : {}),
       packet_version: packet.packet_version,
       display_output_sha256: packet.display_output_sha256,
       displayed_reflection_sha256: packet.displayed_reflection_sha256,
@@ -178,7 +179,14 @@ export function validatePackets(value: unknown): Packet[] {
     const packet = object(item)
     if (packet.condition_blinded !== true || typeof packet.task !== 'string' || !tasks.includes(packet.task)) throw new Error('Die Datei muss verblindete Bewertungspakete enthalten.')
     if (packet.task === 'reflection_reference_score') {
-      allowKeys(packet, ['packet_id', 'task', 'packet_version', 'protocol_id', 'protocol_version', 'human_protocol', 'condition_blinded', 'reflection', 'rubric', 'score_dimensions'], ['segment_annotations', 'displayed_reflection_sha256'])
+      allowKeys(packet, ['packet_id', 'task', 'packet_version', 'protocol_id', 'protocol_version', 'human_protocol', 'condition_blinded', 'reflection', 'rubric', 'score_dimensions'], ['scale', 'segment_annotations', 'displayed_reflection_sha256'])
+      if (packet.scale !== undefined) {
+        const scale = allowKeys(packet.scale, ['min', 'max', 'anchors'], ['step', 'id'])
+        if (scale.min !== REFERENCE_SCORE_SCALE.min || scale.max !== REFERENCE_SCORE_SCALE.max
+          || (scale.step !== undefined && scale.step !== REFERENCE_SCORE_SCALE.step)
+          || (scale.id !== undefined && scale.id !== REFERENCE_SCORE_SCALE.id)) throw new Error('Das Referenzbewertungsprotokoll verwendet eine inkompatible Punktwertskala.')
+        Object.values(object(scale.anchors)).forEach(text)
+      }
     }
     for (const field of ['packet_version', 'protocol_id', 'protocol_version', 'human_protocol']) text(packet[field])
     const reflection = object(packet.reflection)
@@ -224,6 +232,7 @@ export function validatePackets(value: unknown): Packet[] {
         const bandKeys = Object.keys(bands)
         const numericBands = bandKeys.map(Number)
         if (!bandKeys.length || bandKeys.some((key, index) => !/^-?\d+$/.test(key) || !Number.isSafeInteger(numericBands[index])) || new Set(numericBands).size !== bandKeys.length) throw new Error('Bewertungsraster benötigt numerische Punktwertanker.')
+        if ([0, 1, 2, 3].some(anchor => !Object.hasOwn(bands, String(anchor))) || numericBands.some(anchor => anchor < 0 || anchor > 3)) throw new Error('Jede Referenzdimension benötigt die Rubrikanker 0 bis 3.')
       }
       if (packet.segment_annotations !== undefined) {
         if (!Array.isArray(packet.segment_annotations)) throw new Error('Ungültige Segmentannotationen.')
@@ -350,7 +359,8 @@ export function validateDraft(packet: Packet, value: unknown): Draft {
     score(answer.score)
     text(answer.rationale)
     const rubricDimension = packet.rubric.dimensions.find(item => item.dimension_id === dimension.dimension_id)
-    if (answer.score !== null && (!Number.isInteger(answer.score) || !rubricDimension || !Object.hasOwn(rubricDimension.bands, String(answer.score)))) throw new Error('Punktwert liegt außerhalb des Bewertungsrasters.')
+    if (answer.score !== null && !isValidReferenceScore(answer.score)) throw new Error('Referenzpunktwerte müssen zwischen 0 und 3 in Schritten von 0,5 liegen.')
+    if (answer.score !== null && !rubricDimension) throw new Error('Punktwert liegt außerhalb des Bewertungsrasters.')
     if (!Array.isArray(answer.evidence_segment_ids) || !answer.evidence_segment_ids.every(id => typeof id === 'string' && segmentIds.has(id)) || new Set(answer.evidence_segment_ids).size !== answer.evidence_segment_ids.length) throw new Error('Ungültige Reflexionsbelege.')
   }
   if (!Array.isArray(draft.spanComments)) throw new Error('Ungültige Textkommentare.')

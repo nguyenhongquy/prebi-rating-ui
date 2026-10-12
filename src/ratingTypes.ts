@@ -47,7 +47,7 @@ export type Packet = {
   protocol_version: string
   human_protocol: string
   criteria?: Criterion[]
-  scale?: { min: number; max: number; anchors: Record<string, string> }
+  scale?: { min: number; max: number; step?: number; id?: string; anchors: Record<string, string> }
   score_dimensions?: Array<{ dimension_id: string; label: string }>
   segment_annotations?: SegmentAnnotation[]
   reflection: { segments: Segment[] }

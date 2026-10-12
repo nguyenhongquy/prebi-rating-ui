@@ -3,6 +3,31 @@ import type { Draft, Packet } from './ratingTypes'
 export type PacketState = 'not_started' | 'draft' | 'changed' | 'submitted'
 export type CaseState = 'not_started' | 'in_progress' | 'complete'
 
+export const REFERENCE_SCORE_SCALE = { id: 'reflection-reference-0-3-step-0.5-v1', min: 0, max: 3, step: 0.5 } as const
+
+export function isValidReferenceScore(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= REFERENCE_SCORE_SCALE.min
+    && value <= REFERENCE_SCORE_SCALE.max
+    && Math.abs(value / REFERENCE_SCORE_SCALE.step - Math.round(value / REFERENCE_SCORE_SCALE.step)) < 1e-8
+}
+
+export function parseReferenceScoreInput(value: string): { score: number | null; valid: boolean } {
+  const trimmed = value.trim()
+  if (!trimmed) return { score: null, valid: true }
+  if (!/^(?:\d+(?:[.,]\d*)?|[.,]\d+)$/.test(trimmed)) return { score: null, valid: false }
+  const score = Number(trimmed.replace(',', '.'))
+  return isValidReferenceScore(score) ? { score, valid: true } : { score: null, valid: false }
+}
+
+export function referenceAnchorScores(score: number | null, anchors: number[]): number[] {
+  if (score === null || !isValidReferenceScore(score)) return []
+  const ordered = [...anchors].filter(Number.isFinite).sort((left, right) => left - right)
+  if (ordered.includes(score)) return [score]
+  const lower = ordered.filter(anchor => anchor < score).at(-1)
+  const upper = ordered.find(anchor => anchor > score)
+  return [lower, upper].filter((anchor): anchor is number => anchor !== undefined)
+}
+
 export function emptyDraft(packet: Packet): Draft {
   return {
     criterionRatings: Object.fromEntries((packet.criteria ?? []).map(item => [item.criterion_id, { score: null, unable_to_judge: false, comment: '' }])),
@@ -61,7 +86,8 @@ export function answerError(packet: Packet, draft: Draft, index: number): string
     const answer = draft.referenceAnswers[dimension.dimension_id]
     const rubricDimension = packet.rubric.dimensions.find(item => item.dimension_id === dimension.dimension_id)
     if (!answer || answer.score === null) return `Wählen Sie für ${dimension.label} einen Punktwert.`
-    if (!rubricDimension || !Object.hasOwn(rubricDimension.bands, String(answer.score))) return `Wählen Sie für ${dimension.label} einen Punktwert aus dem Bewertungsraster.`
+    if (!isValidReferenceScore(answer.score)) return `Wählen Sie für ${dimension.label} einen Punktwert von 0,0 bis 3,0 in Schritten von 0,5.`
+    if (!rubricDimension) return `Wählen Sie für ${dimension.label} einen Punktwert aus dem Bewertungsraster.`
     return null
   }
   if (packet.task === 'feedback_implied_score') {

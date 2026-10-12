@@ -133,6 +133,14 @@ learner scores remain 0.0-3.0 in tenths, not quality ratings. Export a separate 
 packet campaign to adopt a revised protocol; do not edit existing packets or mix
 ratings across versions.
 
+Reflection reference scores use 0.0-3.0 in half-point steps. Rubric levels 0, 1,
+2, and 3 remain the qualitative anchors. Legacy reference packets without a
+resolution field, or with integer anchor metadata but no explicit step, use the
+half-step scale; an explicitly incompatible reference scale is rejected. New
+reference-rating exports identify this resolution as
+`reflection-reference-0-3-step-0.5-v1`; existing packet and protocol identifiers
+are preserved.
+
 ## Expert Consensus Sessions
 
 Choose **Gemeinsame Konsensbewertung** before importing a packet bundle to create
@@ -158,7 +166,7 @@ contains four entirely invented German-language packets: reflection reference
 score, assessment quality, feedback quality, and feedback-implied score. The
 reference packet contains only the reflection, optional expert segment
 annotations, and its rubric; it has no generated assessment or feedback source.
-Its selectable scores come from the supplied rubric bands. Protocol IDs and
+Its integer rubric bands are anchors for the half-step reference scale. Protocol IDs and
 rubric version are test-only, not a substitute for the research protocols.
 
 Download the bundle from the deployed site's
@@ -175,6 +183,12 @@ evidence links, feedback span comments, implied-score evidence, non-inferable
 answers, completion, and export. The existing
 `synthetic-review-bundle.json` is a separate lecturer-review fixture and cannot
 be imported as an expert evaluation packet.
+
+The consensus test derives six blinded cases from the synthetic evaluation
+bundle, with two cases each for reflection reference scoring, assessment
+quality, and feedback quality. It exercises consensus packet validation,
+case filters, flagging, finalization, reopening, restoration, and finalized-only
+export without including the legacy feedback-implied-score task.
 
 ```bash
 npm test

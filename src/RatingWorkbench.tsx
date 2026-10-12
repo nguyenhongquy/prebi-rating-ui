@@ -11,7 +11,7 @@ import './RatingWorkbench.css'
 import SourceComparison from './SourceComparison'
 import ConsensusControls from './ConsensusControls'
 import { componentLabels, type ConsensusCaseState, type Draft, type Packet, type RatingTask, type ScoreAnswer, type SpanComment } from './ratingTypes'
-import { answerError, canonicalJson, emptyDraft, evaluationSteps, responseForDraft, type CaseState } from './ratingValidation'
+import { answerError, canonicalJson, emptyDraft, evaluationSteps, isValidReferenceScore, parseReferenceScoreInput, referenceAnchorScores, REFERENCE_SCORE_SCALE, responseForDraft, type CaseState } from './ratingValidation'
 import RatingProgress from './RatingProgress'
 import PacketNavigator from './PacketNavigator'
 import { readSession, writeSession, listSessions } from './localSessions'
@@ -26,6 +26,7 @@ type SavedRating = {
   evaluator_id: string
   protocol_id: string
   protocol_version: string
+  scoring_scale_id?: string
   packet_version: string
   display_output_sha256?: string
   displayed_reflection_sha256?: string
@@ -504,7 +505,8 @@ export default function RatingWorkbench() {
       const consensus = session.evaluation_mode === 'expert_consensus' ? session.consensus?.[packet.packet_id] : undefined
       const prior = consensus ? undefined : previous[queueKey(packet, session.evaluator_id)]
       const response = responseForDraft(packet, session.drafts[packet.packet_id])
-      return { schema_version: consensus ? '1.1.0' : '1.0.0', rating_id: prior?.rating_id ?? crypto.randomUUID(), packet_id: packet.packet_id, task: packet.task, evaluator_type: 'human', evaluator_id: session.evaluator_id, protocol_id: packet.protocol_id, protocol_version: packet.protocol_version, packet_version: packet.packet_version, display_output_sha256: packet.display_output_sha256, displayed_reflection_sha256: packet.displayed_reflection_sha256, submitted_at: consensus?.finalized_at ?? (prior && canonicalJson(prior.response) === canonicalJson(response) ? prior.submitted_at : new Date().toISOString()), response, ...(consensus ? { evaluation_mode: 'expert_consensus' as const, panel_id: session.panel_id, ...(session.panel_members ? { panel_members: session.panel_members } : {}), consensus } : {}) }
+      const unchangedPrior = prior && canonicalJson(prior.response) === canonicalJson(response)
+      return { schema_version: consensus ? '1.1.0' : '1.0.0', rating_id: prior?.rating_id ?? crypto.randomUUID(), packet_id: packet.packet_id, task: packet.task, evaluator_type: 'human', evaluator_id: session.evaluator_id, protocol_id: packet.protocol_id, protocol_version: packet.protocol_version, ...(packet.task === 'reflection_reference_score' ? unchangedPrior ? (prior.scoring_scale_id ? { scoring_scale_id: prior.scoring_scale_id } : {}) : { scoring_scale_id: REFERENCE_SCORE_SCALE.id } : {}), packet_version: packet.packet_version, display_output_sha256: packet.display_output_sha256, displayed_reflection_sha256: packet.displayed_reflection_sha256, submitted_at: consensus?.finalized_at ?? (unchangedPrior ? prior.submitted_at : new Date().toISOString()), response, ...(consensus ? { evaluation_mode: 'expert_consensus' as const, panel_id: session.panel_id, ...(session.panel_members ? { panel_members: session.panel_members } : {}), consensus } : {}) }
     })
     if (records.length) downloadJson('ratings-evaluation.json', { schema_version: '1.0.0', ratings: records })
   }
@@ -566,7 +568,7 @@ export default function RatingWorkbench() {
       </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} referenceEvidence={referenceDimension && referenceAnswer && !consensusFinalized ? { ids: referenceAnswer.evidence_segment_ids, label: referenceDimension.label, onToggle: toggleReferenceEvidence } : undefined}><section className="task-panel" aria-label="Ihre Bewertung"><div className="panel-title"><span>Ihre Bewertung</span></div>
         {packet.task === 'feedback_implied_score' ? <p className="draft-progress">{steps.filter((_, index) => !answerError(packet, draft, index)).length} / {steps.length} Dimensionen vollständig</p> : <RatingProgress packet={packet} draft={draft} activeIndex={criterionIndex} onNavigate={navigateCriterion} />}
         {packet.task !== 'feedback_implied_score' && <p className="criterion-position">{packet.task === 'reflection_reference_score' ? 'Dimension' : 'Kriterium'} {criterionIndex + 1} von {steps.length}</p>}
-        <fieldset className="rating-edit-fieldset" disabled={consensusFinalized}>{packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} addSpanComment={addSpanComment} /> : packet.task === 'reflection_reference_score' ? <ReferenceRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} /> : <QualityRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} spanTags={spanTags} setSpanTags={editSpanTags} addSpanComment={addSpanComment} />}</fieldset>
+        <fieldset className="rating-edit-fieldset" disabled={consensusFinalized}>{packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} addSpanComment={addSpanComment} /> : packet.task === 'reflection_reference_score' ? <ReferenceRating key={`${packet.packet_id}-${criterionIndex}`} packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} /> : <QualityRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} spanTags={spanTags} setSpanTags={editSpanTags} addSpanComment={addSpanComment} />}</fieldset>
         {consensusMode && consensusRecord && <ConsensusControls key={packet.packet_id} status={consensusStatus} note={consensusRecord.note} answerComplete={packetState(packet) === 'complete'} answerErrors={consensusAnswerErrors(packet, draft)} finalizedAt={consensusRecord.finalized_at} finalizedBy={consensusRecord.finalized_by} finalizationHistory={consensusRecord.finalization_history} onNoteChange={editConsensusNote} onFlag={flagCurrentCase} onResume={resumeCurrentCase} onFinalize={finalizeCurrentCase} onReopen={reopenCurrentCase} />}
       </section><footer className="rating-footer"><PersistenceStatus state={persistence} /><div>{packet.task !== 'feedback_implied_score' && <button className="icon-button" disabled={criterionIndex === 0} onClick={() => navigateCriterion(criterionIndex - 1)} title="Vorheriges Kriterium" aria-label="Vorheriges Kriterium"><ChevronLeft size={16} /></button>}{packet.task !== 'feedback_implied_score' && criterionIndex < steps.length - 1 ? <button className="submit-button" onClick={nextCriterion}>Nächstes Kriterium<ChevronRight size={16} /></button> : <button className="submit-button" onClick={nextCase}>Nächster Fall<ChevronRight size={16} /></button>}</div></footer></SourceComparison></main></div>}
     </>}
@@ -599,15 +601,45 @@ function ReferenceRating({ packet, draft, activeIndex, updateDraft }: {
 }) {
   const dimension = packet.score_dimensions?.[activeIndex]
   if (!dimension) return null
+  const dimensionId = dimension.dimension_id
   const rubric = packet.rubric.dimensions.find(item => item.dimension_id === dimension.dimension_id)
   const answer = draft.referenceAnswers[dimension.dimension_id]
   if (!rubric || !answer) return null
   const bands = Object.entries(rubric.bands).sort(([left], [right]) => Number(left) - Number(right))
+  const scale = packet.scale ?? REFERENCE_SCORE_SCALE
+  const [scoreInput, setScoreInput] = useState(answer.score === null ? '' : answer.score.toFixed(1).replace('.', ','))
+  const [scoreInputError, setScoreInputError] = useState('')
+  const selectedAnchors = new Set(referenceAnchorScores(answer.score, bands.map(([score]) => Number(score))))
+  const answerLabel = `${dimension.dimension_id} · ${dimension.label}`
+  const inputId = `reference-score-${dimension.dimension_id}`
   const segmentNumbers = new Map(packet.reflection.segments.map(segment => [segment.segment_id, segment.order + 1]))
+  function setReferenceScore(score: number | null) {
+    if (score !== null && !isValidReferenceScore(score)) return
+    setScoreInput(score === null ? '' : score.toFixed(1).replace('.', ','))
+    setScoreInputError('')
+    updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimensionId]: { ...answer, score } } })
+  }
+  function editReferenceScore(value: string) {
+    setScoreInput(value)
+    const parsed = parseReferenceScoreInput(value)
+    if (!parsed.valid) {
+      setScoreInputError('Geben Sie einen Wert von 0,0 bis 3,0 in Schritten von 0,5 ein.')
+      if (answer.score !== null) updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimensionId]: { ...answer, score: null } } })
+      return
+    }
+    setScoreInputError('')
+    updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimensionId]: { ...answer, score: parsed.score } } })
+  }
   return <article className="criterion reference-criterion">
     <div className="criterion-heading"><div><h3>{dimension.dimension_id} · {dimension.label}</h3><p>{rubric.description}</p></div></div>
-    <dl className="criterion-anchors">{bands.map(([score, descriptor]) => <div key={score}><dt>{score}</dt><dd>{descriptor}</dd></div>)}</dl>
-    <div className="reference-score-choices" role="group" aria-label={`${dimension.label} · Referenzpunktwert`}>{bands.map(([score, descriptor]) => <button type="button" key={score} className={answer.score === Number(score) ? 'chosen' : ''} aria-pressed={answer.score === Number(score)} onClick={() => updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimension.dimension_id]: { ...answer, score: Number(score) } } })}><strong>{score}</strong><span>{descriptor}</span></button>)}</div>
+    <p className="reference-scale-note">Die Stufen 0 bis 3 dienen als Bewertungsanker. Zwischenwerte in Schritten von 0,5 können vergeben werden, wenn die Reflexionsleistung zwischen zwei Ankern liegt.</p>
+    <dl className="criterion-anchors reference-anchors">{bands.map(([score, descriptor]) => <div key={score} className={selectedAnchors.has(Number(score)) ? 'surrounding' : ''} aria-current={selectedAnchors.has(Number(score)) ? 'true' : undefined}><dt>{score}</dt><dd>{descriptor}</dd></div>)}</dl>
+    <section className="reference-score-control" aria-label={`${answerLabel} · Bewertung`}>
+      <div className="reference-score-heading"><strong>Bewertung</strong><output htmlFor={inputId}>{answer.score === null ? `Noch offen / ${scale.max.toFixed(1).replace('.', ',')}` : `${answer.score.toFixed(1).replace('.', ',')} / ${scale.max.toFixed(1).replace('.', ',')}`}</output></div>
+      <div className="reference-score-entry"><div className="reference-range"><input type="range" min={scale.min} max={scale.max} step={scale.step ?? REFERENCE_SCORE_SCALE.step} value={answer.score ?? scale.min} disabled={answer.score === null} aria-label={`${answerLabel} · Schieberegler`} aria-valuetext={answer.score === null ? 'Keine Bewertung ausgewählt' : `${answer.score.toFixed(1)} von ${scale.max.toFixed(1)}`} className={answer.score === null ? 'unselected' : ''} onChange={event => setReferenceScore(Number(event.currentTarget.value))} /><div className="reference-range-labels" aria-hidden="true">{Array.from({ length: Math.round((scale.max - scale.min) / (scale.step ?? REFERENCE_SCORE_SCALE.step)) + 1 }, (_, index) => <span key={index}>{(scale.min + index * (scale.step ?? REFERENCE_SCORE_SCALE.step)).toFixed(1).replace('.', ',')}</span>)}</div></div>
+        <label className="field reference-score-input" htmlFor={inputId}><span>Zahlwert <small>0,0 bis 3,0</small></span><input id={inputId} type="text" inputMode="decimal" value={scoreInput} aria-label={`${answerLabel} · Zahlwert`} aria-invalid={Boolean(scoreInputError)} aria-describedby={`${inputId}-help ${inputId}-error`} onChange={event => editReferenceScore(event.currentTarget.value)} /><small id={`${inputId}-help`}>Leeres Feld = unbeantwortet</small>{scoreInputError && <small className="reference-score-error" id={`${inputId}-error`} role="alert">{scoreInputError}</small>}</label>
+      </div>
+    </section>
     <label className="field"><span>{dimension.label} · Begründung <small>Optional</small></span><textarea rows={3} value={answer.rationale} onChange={event => updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimension.dimension_id]: { ...answer, rationale: event.target.value } } })} /></label>
     <div className="reference-evidence-summary"><strong>Belegsegmente <small>Optional</small></strong>{answer.evidence_segment_ids.length ? answer.evidence_segment_ids.map(id => <button className="text-button" type="button" key={id} onClick={() => updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimension.dimension_id]: { ...answer, evidence_segment_ids: answer.evidence_segment_ids.filter(item => item !== id) } } })}>Segment {segmentNumbers.get(id)} entfernen</button>) : <span>Noch keine Segmente ausgewählt</span>}</div>
   </article>
