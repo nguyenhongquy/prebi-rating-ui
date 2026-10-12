@@ -9,15 +9,16 @@ import {
 import { AppShell, PacketFileButton } from './AppShell'
 import './RatingWorkbench.css'
 import SourceComparison from './SourceComparison'
-import { componentLabels, type Draft, type Packet, type RatingTask, type ScoreAnswer, type SpanComment } from './ratingTypes'
+import ConsensusControls from './ConsensusControls'
+import { componentLabels, type ConsensusCaseState, type Draft, type Packet, type RatingTask, type ScoreAnswer, type SpanComment } from './ratingTypes'
 import { answerError, canonicalJson, emptyDraft, evaluationSteps, responseForDraft, type CaseState } from './ratingValidation'
 import RatingProgress from './RatingProgress'
 import PacketNavigator from './PacketNavigator'
 import { readSession, writeSession, listSessions } from './localSessions'
 import { WorkflowHelp, ResumePrompt, ExportSummary, PersistenceStatus } from './WorkflowSupport'
-import { assertSourcesMatch, bundleHash, checkPacketHashes, draftFromResponse, expertCaseState, legacyDraft, sessionKey, validateDraft, validatePackets, validateSession, type ExpertSession, type PendingEditor } from './expertSession'
+import { assertConsensusBlinding, assertSourcesMatch, bundleHash, checkPacketHashes, consensusAnswerErrors, consensusCaseState, consensusResearchExport, draftFromResponse, emptyConsensus, expertCaseState, finalizeConsensus, flagConsensus, legacyDraft, reopenConsensus, researchExportPackets, resumeConsensus, sessionKey, validateDraft, validatePackets, validateSession, type ExpertSession, type PendingEditor } from './expertSession'
 type SavedRating = {
-  schema_version: '1.0.0'
+  schema_version: '1.0.0' | '1.1.0'
   rating_id: string
   packet_id: string
   task: RatingTask
@@ -30,6 +31,10 @@ type SavedRating = {
   displayed_reflection_sha256?: string
   submitted_at: string
   response: unknown
+  evaluation_mode?: 'expert_consensus'
+  panel_id?: string
+  panel_members?: string[]
+  consensus?: NonNullable<ExpertSession['consensus']>[string]
 }
 
 const TASK_LABELS: Record<RatingTask, string> = {
@@ -46,8 +51,12 @@ function queueKey(packet: Packet, evaluatorId: string) {
   return `${evaluatorId.trim()}::${packet.packet_id}`
 }
 
-function firstTask(packets: Packet[]): RatingTask {
-  return (Object.keys(TASK_LABELS) as RatingTask[]).find(task => packets.some(packet => packet.task === task)) ?? packets[0].task
+function availableTasks(packets: Packet[], consensusMode = false): RatingTask[] {
+  return (Object.keys(TASK_LABELS) as RatingTask[]).filter(task => packets.some(packet => packet.task === task) && (!consensusMode || task !== 'feedback_implied_score'))
+}
+
+function firstTask(packets: Packet[], consensusMode = false): RatingTask {
+  return availableTasks(packets, consensusMode)[0] ?? packets[0].task
 }
 
 function downloadJson(filename: string, value: unknown) {
@@ -88,7 +97,7 @@ function checkLegacySources(packets: Packet[]) {
 }
 
 function freshSession(session: ExpertSession): ExpertSession {
-  return { ...session, drafts: Object.fromEntries(session.packets.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, active_task: firstTask(session.packets), active_index: 0, active_criterion: 0 }
+  return { ...session, drafts: Object.fromEntries(session.packets.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, ...(session.evaluation_mode === 'expert_consensus' ? { consensus: emptyConsensus(session.packets) } : {}), active_task: firstTask(session.packets, session.evaluation_mode === 'expert_consensus'), active_index: 0, active_criterion: 0 }
 }
 
 type PendingSession = {
@@ -100,8 +109,12 @@ type PendingSession = {
 
 export default function RatingWorkbench() {
   const [session, setSession] = useState<ExpertSession | null>(null)
+  const [evaluationMode, setEvaluationMode] = useState<'individual' | 'expert_consensus'>('individual')
   const [evaluatorId, setEvaluatorId] = useState(() => {
     try { return localStorage.getItem('prebi-rating-evaluator') ?? '' } catch { return '' }
+  })
+  const [panelId, setPanelId] = useState(() => {
+    try { return localStorage.getItem('prebi-rating-panel') ?? '' } catch { return '' }
   })
   const [savedSessions, setSavedSessions] = useState<ExpertSession[]>([])
   const [pending, setPending] = useState<PendingSession | null>(null)
@@ -120,24 +133,38 @@ export default function RatingWorkbench() {
   const currentSession = useRef(session)
   currentSession.current = session
   const packets = session?.packets ?? []
+  const consensusMode = session?.evaluation_mode === 'expert_consensus'
   const taskFilter = session?.active_task ?? 'feedback_implied_score'
   const packetIndex = session?.active_index ?? 0
   const criterionIndex = session?.active_criterion ?? 0
-  const taskPackets = packets.filter(packet => packet.task === taskFilter)
+  const taskPackets = packets.filter(packet => packet.task === taskFilter && (!consensusMode || packet.task !== 'feedback_implied_score'))
   const packet = taskPackets[packetIndex] ?? null
   const draft = packet ? session!.drafts[packet.packet_id] : null
   const packetState = (item: Packet): CaseState => session ? expertCaseState(item, session) : 'not_started'
   const packetStates: CaseState[] = taskPackets.map(packetState)
-  const doneCount = packetStates.filter(state => state === 'complete').length
-  const completeCount = packets.filter(item => packetState(item) === 'complete').length
-  const startedCount = packets.filter(item => packetState(item) !== 'not_started').length
+  const consensusStates: ConsensusCaseState[] = session && consensusMode ? taskPackets.map(item => consensusCaseState(item, session)) : []
+  const doneCount = consensusMode ? consensusStates.filter(state => state === 'finalized').length : packetStates.filter(state => state === 'complete').length
+  const exportPackets = session ? researchExportPackets(session) : []
+  const completeCount = exportPackets.length
+  const startedCount = session ? packets.filter(item => consensusMode
+    ? item.task !== 'feedback_implied_score' && consensusCaseState(item, session) !== 'not_started'
+    : packetState(item) !== 'not_started').length : 0
   const steps = packet ? evaluationSteps(packet) : []
-  const savedForEvaluator = Object.values(legacyRatings()).filter(rating => rating.evaluator_id === evaluatorId.trim())
+  const consensusRecord = packet && consensusMode ? session?.consensus?.[packet.packet_id] : undefined
+  const consensusStatus = packet && session && consensusMode ? consensusCaseState(packet, session) : 'not_started'
+  const consensusFinalized = consensusRecord?.status === 'finalized'
+  const identity = evaluationMode === 'expert_consensus' ? panelId.trim() : evaluatorId.trim()
+  const savedForEvaluator = Object.values(legacyRatings()).filter(rating => rating.evaluator_id === identity)
 
   useEffect(() => {
     try { localStorage.setItem('prebi-rating-evaluator', evaluatorId) }
     catch { setError('Der Bewertungscode konnte nicht lokal gespeichert werden. Exportieren Sie Ihren Stand zur Sicherung.') }
   }, [evaluatorId])
+
+  useEffect(() => {
+    try { localStorage.setItem('prebi-rating-panel', panelId) }
+    catch { setError('Die Panel-ID konnte nicht lokal gespeichert werden.') }
+  }, [panelId])
 
   useEffect(() => {
     if (persistence !== 'saving' && persistence !== 'error') return
@@ -153,17 +180,17 @@ export default function RatingWorkbench() {
     if (session) return
     let cancelled = false
     setSavedSessions([])
-    listSessions<unknown>(evaluatorId.trim() ? `expert::${evaluatorId.trim()}::` : 'expert::').then(async (entries: { key: string; value: unknown }[]) => {
+    listSessions<unknown>(identity ? `expert::${identity}::` : 'expert::').then(async (entries: { key: string; value: unknown }[]) => {
       const sessions: ExpertSession[] = []
       for (const entry of entries) {
         const saved = await validateSession(entry.value)
         if (sessionKey(saved) !== entry.key) throw new Error('Lokaler Sitzungsschlüssel stimmt nicht mit dem Inhalt überein.')
-        if (!evaluatorId.trim() || saved.evaluator_id === evaluatorId.trim()) sessions.push(saved)
+        if (!identity || saved.evaluator_id === identity) sessions.push(saved)
       }
       if (!cancelled) setSavedSessions(sessions)
     }).catch((caught: unknown) => { if (!cancelled) setError(caught instanceof Error ? caught.message : 'Lokale Sitzungen konnten nicht gelesen werden.') })
     return () => { cancelled = true }
-  }, [evaluatorId, session])
+  }, [identity, session])
 
   useEffect(() => {
     if (!session) return
@@ -203,7 +230,7 @@ export default function RatingWorkbench() {
   }, [packet?.packet_id])
 
   function rememberEditor(selection = selectedSpan, comment = spanComment, tags = spanTags) {
-    if (!packet) return
+    if (!packet || consensusFinalized) return
     setSession(current => {
       if (!current) return current
       const editor = { selection, comment, tags }
@@ -241,7 +268,7 @@ export default function RatingWorkbench() {
   function nextCase() {
     if (packetIndex < taskPackets.length - 1) navigatePacket(packetIndex + 1)
     else {
-      const tasks = (Object.keys(TASK_LABELS) as RatingTask[]).filter(task => packets.some(item => item.task === task))
+      const tasks = availableTasks(packets, consensusMode)
       const nextTask = tasks[tasks.indexOf(taskFilter) + 1]
       if (nextTask) setSession(current => current ? { ...current, active_task: nextTask, active_index: 0, active_criterion: 0 } : current)
       else setExportOpen(true)
@@ -250,12 +277,67 @@ export default function RatingWorkbench() {
 
   function updateDraft(patch: Partial<Draft>) {
     if (!packet || !draft) return
+    if (consensusFinalized) {
+      setError('Öffnen Sie den Konsens zur Bearbeitung, bevor Sie Antworten ändern.')
+      return
+    }
     try {
       const next = validateDraft(packet, { ...draft, ...patch })
-      setSession(current => current ? { ...current, drafts: { ...current.drafts, [packet.packet_id]: next } } : current)
+      setSession(current => {
+        if (!current) return current
+        const record = current.consensus?.[packet.packet_id]
+        return { ...current, drafts: { ...current.drafts, [packet.packet_id]: next }, ...(record?.status === 'flagged' ? { consensus: { ...current.consensus, [packet.packet_id]: resumeConsensus(record) } } : {}) }
+      })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Ungültige Antwort.')
     }
+  }
+
+  function editConsensusNote(value: string) {
+    if (!packet || !consensusRecord || consensusFinalized) return
+    setSession(current => {
+      const record = current?.consensus?.[packet.packet_id]
+      return current && record ? { ...current, consensus: { ...current.consensus, [packet.packet_id]: { ...record, note: value } } } : current
+    })
+  }
+
+  function flagCurrentCase() {
+    if (!packet || !consensusRecord || consensusFinalized) return
+    setSession(current => {
+      const record = current?.consensus?.[packet.packet_id]
+      return current && record ? { ...current, consensus: { ...current.consensus, [packet.packet_id]: flagConsensus(record) } } : current
+    })
+  }
+
+  function resumeCurrentCase() {
+    if (!packet || !consensusRecord || consensusFinalized) return
+    setSession(current => {
+      const record = current?.consensus?.[packet.packet_id]
+      return current && record ? { ...current, consensus: { ...current.consensus, [packet.packet_id]: resumeConsensus(record) } } : current
+    })
+  }
+
+  function finalizeCurrentCase() {
+    if (!packet || !draft || !consensusRecord || !session?.panel_id || consensusFinalized) return
+    const errors = consensusAnswerErrors(packet, draft)
+    if (errors.length) {
+      setError(errors.join(' '))
+      return
+    }
+    setSession(current => {
+      if (!current?.consensus || !current.panel_id) return current
+      return { ...current, consensus: { ...current.consensus, [packet.packet_id]: finalizeConsensus(current.consensus[packet.packet_id], packet, current.drafts[packet.packet_id], current.panel_id) } }
+    })
+    setError('')
+  }
+
+  function reopenCurrentCase() {
+    if (!packet || !consensusRecord || !consensusFinalized) return
+    setSession(current => {
+      const record = current?.consensus?.[packet.packet_id]
+      return current && record ? { ...current, consensus: { ...current.consensus, [packet.packet_id]: reopenConsensus(record) } } : current
+    })
+    setError('')
   }
 
   async function installSession(chosen: ExpertSession, fingerprint: string | undefined) {
@@ -275,7 +357,13 @@ export default function RatingWorkbench() {
     setSelectedSpan(editor?.selection ?? null)
     setSpanComment(editor?.comment ?? '')
     setSpanTags(editor?.tags ?? [])
-    setEvaluatorId(chosen.evaluator_id)
+    if (chosen.evaluation_mode === 'expert_consensus') {
+      setEvaluationMode('expert_consensus')
+      setPanelId(chosen.panel_id ?? chosen.evaluator_id)
+    } else {
+      setEvaluationMode('individual')
+      setEvaluatorId(chosen.evaluator_id)
+    }
     setSession(chosen)
     setPending(null)
     setExportOpen(false)
@@ -300,6 +388,10 @@ export default function RatingWorkbench() {
       return
     }
     if (imported) {
+      await installSession(incoming, undefined)
+      return
+    }
+    if (incoming.evaluation_mode === 'expert_consensus') {
       await installSession(incoming, undefined)
       return
     }
@@ -329,15 +421,25 @@ export default function RatingWorkbench() {
     event.target.value = ''
     if (!file || busy) return
     await attempt(async () => {
-      if (!evaluatorId.trim()) throw new Error('Geben Sie Ihren Bewertungscode ein, bevor Sie eine Sitzung öffnen.')
       const parsed: unknown = JSON.parse(await file.text())
       if (parsed && typeof parsed === 'object' && Object.hasOwn(parsed, 'kind')) {
         const imported = await validateSession(parsed)
-        if (imported.evaluator_id !== evaluatorId.trim()) throw new Error('Die Sitzung gehört zu einem anderen Bewertungscode.')
+        if (imported.evaluation_mode === 'expert_consensus') {
+          if (panelId.trim() && imported.panel_id !== panelId.trim()) throw new Error('Die Sitzung gehört zu einem anderen Panel.')
+          setPanelId(imported.panel_id ?? imported.evaluator_id)
+        } else {
+          if (!evaluatorId.trim() || imported.evaluator_id !== evaluatorId.trim()) throw new Error('Die Sitzung gehört zu einem anderen Bewertungscode.')
+        }
         await prepareSession(imported, true)
         return
       }
+      const activeIdentity = evaluationMode === 'expert_consensus' ? panelId.trim() : evaluatorId.trim()
+      if (!activeIdentity) throw new Error(evaluationMode === 'expert_consensus' ? 'Geben Sie eine Panel-ID ein, bevor Sie die Konsenssitzung öffnen.' : 'Geben Sie Ihren Bewertungscode ein, bevor Sie eine Sitzung öffnen.')
       const loaded = validatePackets(Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' && Object.hasOwn(parsed, 'packets') ? (parsed as { packets: unknown }).packets : [parsed])
+      if (evaluationMode === 'expert_consensus') {
+        if (!availableTasks(loaded, true).length) throw new Error('Das Paket enthält keine Fälle für die drei primären Konsensaufgaben.')
+        assertConsensusBlinding(loaded)
+      }
       await checkPacketHashes(loaded)
       const hash = await bundleHash(loaded)
       const ordered = [...loaded]
@@ -345,8 +447,10 @@ export default function RatingWorkbench() {
         const next = Math.floor(Math.random() * (index + 1))
         ;[ordered[index], ordered[next]] = [ordered[next], ordered[index]]
       }
-      const incoming: ExpertSession = { kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: evaluatorId.trim(), bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, active_task: firstTask(ordered), active_index: 0, active_criterion: 0 }
-      await prepareSession(incoming, false)
+      const incoming: ExpertSession = evaluationMode === 'expert_consensus'
+        ? { kind: 'prebi_expert_session', schema_version: '1.1.0', evaluator_id: activeIdentity, evaluation_mode: 'expert_consensus', panel_id: activeIdentity, bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, consensus: emptyConsensus(ordered), active_task: firstTask(ordered, true), active_index: 0, active_criterion: 0 }
+        : { kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: activeIdentity, bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, active_task: firstTask(ordered), active_index: 0, active_criterion: 0 }
+      await prepareSession(evaluationMode === 'expert_consensus' ? await validateSession(incoming) : incoming, false)
     })
   }
 
@@ -361,7 +465,7 @@ export default function RatingWorkbench() {
   }
 
   function addSpanComment() {
-    if (!selectedSpan || !spanComment.trim()) return
+    if (!selectedSpan || !spanComment.trim() || consensusFinalized) return
     const comment: SpanComment = { feedback_component: selectedSpan.component, feedback_item_index: selectedSpan.index, start_character: selectedSpan.start, end_character: selectedSpan.end, comment: spanComment.trim(), tags: spanTags, linked_reflection_segment_ids: [] }
     updateDraft({ spanComments: [...(draft?.spanComments ?? []), comment] })
     rememberEditor(null, '', [])
@@ -371,6 +475,7 @@ export default function RatingWorkbench() {
   }
 
   function handleFeedbackSelection(event: React.SyntheticEvent<HTMLTextAreaElement>, component: string, index: number) {
+    if (consensusFinalized) return
     const target = event.currentTarget
     const start = target.selectionStart
     const end = target.selectionEnd
@@ -389,11 +494,17 @@ export default function RatingWorkbench() {
 
   function exportResearch() {
     if (!session) return
+    if (session.evaluation_mode === 'expert_consensus') {
+      const exported = consensusResearchExport(session)
+      if (exported.ratings.length) downloadJson('ratings-consensus.json', exported)
+      return
+    }
     const previous = legacyRatings()
-    const records: SavedRating[] = packets.filter(packet => packetState(packet) === 'complete').map(packet => {
-      const prior = previous[queueKey(packet, session.evaluator_id)]
+    const records: SavedRating[] = exportPackets.map(packet => {
+      const consensus = session.evaluation_mode === 'expert_consensus' ? session.consensus?.[packet.packet_id] : undefined
+      const prior = consensus ? undefined : previous[queueKey(packet, session.evaluator_id)]
       const response = responseForDraft(packet, session.drafts[packet.packet_id])
-      return { schema_version: '1.0.0', rating_id: prior?.rating_id ?? crypto.randomUUID(), packet_id: packet.packet_id, task: packet.task, evaluator_type: 'human', evaluator_id: session.evaluator_id, protocol_id: packet.protocol_id, protocol_version: packet.protocol_version, packet_version: packet.packet_version, display_output_sha256: packet.display_output_sha256, displayed_reflection_sha256: packet.displayed_reflection_sha256, submitted_at: prior && canonicalJson(prior.response) === canonicalJson(response) ? prior.submitted_at : new Date().toISOString(), response }
+      return { schema_version: consensus ? '1.1.0' : '1.0.0', rating_id: prior?.rating_id ?? crypto.randomUUID(), packet_id: packet.packet_id, task: packet.task, evaluator_type: 'human', evaluator_id: session.evaluator_id, protocol_id: packet.protocol_id, protocol_version: packet.protocol_version, packet_version: packet.packet_version, display_output_sha256: packet.display_output_sha256, displayed_reflection_sha256: packet.displayed_reflection_sha256, submitted_at: consensus?.finalized_at ?? (prior && canonicalJson(prior.response) === canonicalJson(response) ? prior.submitted_at : new Date().toISOString()), response, ...(consensus ? { evaluation_mode: 'expert_consensus' as const, panel_id: session.panel_id, ...(session.panel_members ? { panel_members: session.panel_members } : {}), consensus } : {}) }
     })
     if (records.length) downloadJson('ratings-evaluation.json', { schema_version: '1.0.0', ratings: records })
   }
@@ -410,7 +521,18 @@ export default function RatingWorkbench() {
     })
   }
 
-  const pendingStarted = pending?.saved.packets.filter(packet => expertCaseState(packet, pending.saved) !== 'not_started').length ?? 0
+  const pendingConsensus = pending?.saved.evaluation_mode === 'expert_consensus'
+  const pendingPackets = pending?.saved.packets.filter(item => !pendingConsensus || item.task !== 'feedback_implied_score') ?? []
+  const pendingStarted = pending?.saved.packets.filter(item => pendingConsensus
+    ? item.task !== 'feedback_implied_score' && consensusCaseState(item, pending.saved) !== 'not_started'
+    : expertCaseState(item, pending.saved) !== 'not_started').length ?? 0
+  const consensusPacketStates = session?.packets.filter(item => item.task !== 'feedback_implied_score').map(item => consensusCaseState(item, session)) ?? []
+  const consensusSummary = consensusMode ? {
+    finalized: consensusPacketStates.filter(state => state === 'finalized').length,
+    inProgress: consensusPacketStates.filter(state => state === 'in_progress').length,
+    flagged: consensusPacketStates.filter(state => state === 'flagged').length,
+    notStarted: consensusPacketStates.filter(state => state === 'not_started').length,
+  } : undefined
   const referenceDimension = packet?.task === 'reflection_reference_score' ? packet.score_dimensions?.[criterionIndex] : undefined
   const referenceAnswer = referenceDimension && draft ? draft.referenceAnswers[referenceDimension.dimension_id] : undefined
 
@@ -422,27 +544,30 @@ export default function RatingWorkbench() {
     updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [referenceDimension.dimension_id]: { ...referenceAnswer, evidence_segment_ids: [...evidence] } } })
   }
 
-  return <AppShell workflow="Expert evaluation" context={session ? <><span>{TASK_LABELS[taskFilter]} · {doneCount} / {taskPackets.length} Fälle vollständig</span><label className="annotator-field">Bewertungscode<input value={session.evaluator_id} disabled autoComplete="off" /></label></> : undefined}>
+  return <AppShell workflow="Expert evaluation" context={session ? <><span>{TASK_LABELS[taskFilter]} · {doneCount} / {taskPackets.length} {consensusMode ? 'Konsens erreicht' : 'Fälle vollständig'}</span><label className="annotator-field">{consensusMode ? 'Panel-ID' : 'Bewertungscode'}<input value={consensusMode ? session.panel_id ?? session.evaluator_id : session.evaluator_id} disabled autoComplete="off" /></label></> : undefined}>
     {error && <div className="rating-error" role="alert">{error}</div>}
     {pending ? <section className="evaluation-start" aria-busy={busy}>
-      {pending.conflict ? <div className="start-content"><h1>Unterschiedliche Sitzungsstände</h1><p>Die Datei und der lokal gespeicherte Stand unterscheiden sich.</p><div className="rating-actions"><button className="submit-button" disabled={busy} onClick={() => chooseSession(pending.saved)}>Lokalen Stand fortsetzen</button><button className="icon-button" disabled={busy} onClick={() => chooseSession(pending.incoming)}>Geöffneten Stand verwenden</button><button className="icon-button" disabled={busy} onClick={() => setPending(null)}>Abbrechen</button></div><button className="icon-button" onClick={() => downloadJson('expert-session-local-backup.json', pending.saved)}><Download size={16} />Lokalen Stand sichern</button></div> : <ResumePrompt count={pendingStarted} total={pending.saved.packets.length} onContinue={() => chooseSession(pending.saved)} onRestart={restartSession} onCancel={() => setPending(null)} />}
+      {pending.conflict ? <div className="start-content"><h1>Unterschiedliche Sitzungsstände</h1><p>Die Datei und der lokal gespeicherte Stand unterscheiden sich.</p><div className="rating-actions"><button className="submit-button" disabled={busy} onClick={() => chooseSession(pending.saved)}>Lokalen Stand fortsetzen</button><button className="icon-button" disabled={busy} onClick={() => chooseSession(pending.incoming)}>Geöffneten Stand verwenden</button><button className="icon-button" disabled={busy} onClick={() => setPending(null)}>Abbrechen</button></div><button className="icon-button" onClick={() => downloadJson('expert-session-local-backup.json', pending.saved)}><Download size={16} />Lokalen Stand sichern</button></div> : <ResumePrompt count={pendingStarted} total={pendingPackets.length} onContinue={() => chooseSession(pending.saved)} onRestart={restartSession} onCancel={() => setPending(null)} />}
     </section> : !session ? <main className="evaluation-start" aria-busy={busy}>
-      <section className="start-content"><h1>Expertenbewertung</h1><label className="annotator-field start-annotator">Bewertungscode<input value={evaluatorId} onChange={event => { setEvaluatorId(event.target.value); setSavedSessions([]); setError('') }} placeholder="Ihr zugewiesener Code" autoComplete="off" disabled={busy} /></label><PacketFileButton onImport={importPacketFile} primary /><WorkflowHelp />
-        {!!savedSessions.length && <section aria-label="Gespeicherte Sitzungen"><h2>Gespeicherte Sitzungen</h2>{savedSessions.map(saved => <button className="icon-button" key={sessionKey(saved)} disabled={busy} onClick={() => void attempt(() => prepareSession(saved, false))}><ChevronRight size={16} />{saved.evaluator_id} · {saved.packets.length} Fälle · {saved.packets.filter(packet => expertCaseState(packet, saved) !== 'not_started').length} begonnen</button>)}</section>}
+      <section className="start-content"><h1>Expertenbewertung</h1><fieldset className="evaluation-mode-choice"><legend>Bewertungsmodus</legend><label><input type="radio" name="evaluation-mode" checked={evaluationMode === 'individual'} onChange={() => { setEvaluationMode('individual'); setSavedSessions([]); setError('') }} />Einzelbewertung</label><label><input type="radio" name="evaluation-mode" checked={evaluationMode === 'expert_consensus'} onChange={() => { setEvaluationMode('expert_consensus'); setSavedSessions([]); setError('') }} />Gemeinsame Konsensbewertung</label></fieldset>
+        {evaluationMode === 'expert_consensus' ? <><label className="annotator-field start-annotator">Panel-ID<input value={panelId} onChange={event => { setPanelId(event.target.value); setSavedSessions([]); setError('') }} placeholder="expert-panel-01" autoComplete="off" disabled={busy} /></label><p className="mode-note">Eine Person bedient die Sitzung stellvertretend für das Expert:innenpanel. Einzelratings und ältere Sitzungen werden nicht als Konsens übernommen.</p></> : <label className="annotator-field start-annotator">Bewertungscode<input value={evaluatorId} onChange={event => { setEvaluatorId(event.target.value); setSavedSessions([]); setError('') }} placeholder="Ihr zugewiesener Code" autoComplete="off" disabled={busy} /></label>}
+        <PacketFileButton onImport={importPacketFile} primary /><WorkflowHelp />
+        {!!savedSessions.length && <section aria-label="Gespeicherte Sitzungen"><h2>Gespeicherte Sitzungen</h2>{savedSessions.map(saved => <button className="icon-button" key={sessionKey(saved)} disabled={busy} onClick={() => void attempt(() => prepareSession(saved, false))}><ChevronRight size={16} />{saved.evaluation_mode === 'expert_consensus' ? 'Konsenspanel' : 'Einzelbewertung'} · {saved.evaluator_id} · {saved.packets.length} Fälle · {saved.packets.filter(item => saved.evaluation_mode === 'expert_consensus' ? item.task !== 'feedback_implied_score' && consensusCaseState(item, saved) !== 'not_started' : expertCaseState(item, saved) !== 'not_started').length} begonnen</button>)}</section>}
         <details className="start-storage-actions"><summary>Ältere Forschungsbewertungen</summary><p>{savedForEvaluator.length} gespeicherte Bewertungen</p><button className="icon-button" disabled={!savedForEvaluator.length} onClick={() => downloadJson('ratings-stored.json', { schema_version: '1.0.0', ratings: savedForEvaluator })}><Download size={16} />Forschungsformat exportieren</button></details>
       </section>
     </main> : <>
-      <div className="rating-toolbar"><div className="task-tabs" role="tablist" aria-label="Bewertungsaufgabe">{(Object.keys(TASK_LABELS) as RatingTask[]).filter(task => packets.some(packet => packet.task === task)).map(task => <button key={task} role="tab" aria-selected={taskFilter === task} className={taskFilter === task ? 'active' : ''} onClick={() => setSession(current => current ? { ...current, active_task: task, active_index: 0, active_criterion: 0 } : current)}>{TASK_LABELS[task]}</button>)}</div><div className="rating-actions"><button className="icon-button" onClick={() => setExportOpen(true)} disabled={!startedCount}><Download size={16} />Stand exportieren</button><details className="file-management"><summary><FileJson size={18} />Dateien &amp; technische Details</summary><div className="rating-actions"><PacketFileButton onImport={importPacketFile} /><button className="icon-button" disabled={!completeCount} onClick={exportResearch}><Download size={16} />Vollständige Bewertungen im Forschungsformat</button><button className="icon-button" onClick={() => setPending({ incoming: session, saved: session, fingerprint: expectedFingerprint.current, conflict: false })}>Neu beginnen</button><button className="icon-button" onClick={() => { if (persistence !== 'saved' && !window.confirm('Der aktuelle Stand ist noch nicht sicher gespeichert. Trotzdem zur Startseite wechseln?')) return; generation.current += 1; setSession(null); setPersistence('idle'); setError('') }}>Sitzung schließen</button></div><p>Bundle: {session.bundle_sha256}</p>{packet && <dl><dt>Fall-ID</dt><dd>{packet.packet_id}</dd><dt>Paketversion</dt><dd>{packet.packet_version}</dd><dt>Protokoll</dt><dd>{packet.protocol_id} · {packet.protocol_version}</dd><dt>Ausgabe-Prüfsumme</dt><dd>{packet.display_output_sha256 ?? 'Nicht vorhanden'}</dd><dt>Reflexions-Prüfsumme</dt><dd>{packet.displayed_reflection_sha256 ?? 'Nicht vorhanden'}</dd></dl>}</details></div></div>
+      <div className="rating-toolbar"><div className="task-tabs" role="tablist" aria-label="Bewertungsaufgabe">{availableTasks(packets, consensusMode).map(task => <button key={task} role="tab" aria-selected={taskFilter === task} className={taskFilter === task ? 'active' : ''} onClick={() => setSession(current => current ? { ...current, active_task: task, active_index: 0, active_criterion: 0 } : current)}>{TASK_LABELS[task]}</button>)}</div><div className="rating-actions"><button className="icon-button" onClick={() => setExportOpen(true)} disabled={!startedCount}><Download size={16} />{consensusMode ? 'Arbeitsstand exportieren' : 'Stand exportieren'}</button><details className="file-management"><summary><FileJson size={18} />Dateien &amp; technische Details</summary><div className="rating-actions"><PacketFileButton onImport={importPacketFile} /><button className="icon-button" disabled={!completeCount} onClick={exportResearch}><Download size={16} />{consensusMode ? 'Finalisierte Konsensratings exportieren' : 'Vollständige Bewertungen im Forschungsformat'}</button><button className="icon-button" onClick={() => setPending({ incoming: session, saved: session, fingerprint: expectedFingerprint.current, conflict: false })}>Neu beginnen</button><button className="icon-button" onClick={() => { if (persistence !== 'saved' && !window.confirm('Der aktuelle Stand ist noch nicht sicher gespeichert. Trotzdem zur Startseite wechseln?')) return; generation.current += 1; setSession(null); setPersistence('idle'); setError('') }}>Sitzung schließen</button></div><p>Bundle: {session.bundle_sha256}</p>{packet && <dl><dt>Fall-ID</dt><dd>{packet.packet_id}</dd><dt>Paketversion</dt><dd>{packet.packet_version}</dd><dt>Protokoll</dt><dd>{packet.protocol_id} · {packet.protocol_version}</dd><dt>Ausgabe-Prüfsumme</dt><dd>{packet.display_output_sha256 ?? 'Nicht vorhanden'}</dd><dt>Reflexions-Prüfsumme</dt><dd>{packet.displayed_reflection_sha256 ?? 'Nicht vorhanden'}</dd></dl>}</details></div></div>
       <div className="rating-status"><ShieldCheck size={16} /><PersistenceStatus state={persistence} /></div>
       {persistence === 'error' && <div className="rating-actions"><button className="icon-button" onClick={() => setSaveAttempt(value => value + 1)}>Speicherung erneut versuchen</button><button className="icon-button" onClick={inspectSaved}>Gespeicherten Stand prüfen</button><button className="icon-button" onClick={exportSession}><Download size={16} />Aktuellen Stand sichern</button></div>}
-      <WorkflowHelp />
-      {exportOpen && <ExportSummary total={packets.length} complete={completeCount} started={startedCount - completeCount} onExport={exportSession} onClose={() => setExportOpen(false)} />}
-      {packet && draft && <div className="rating-layout"><PacketNavigator label={TASK_LABELS[taskFilter]} states={packetStates} activeIndex={packetIndex} onNavigate={navigatePacket}>
+      <WorkflowHelp consensus={consensusMode} />
+      {exportOpen && <ExportSummary total={consensusMode ? consensusPacketStates.length : packets.length} complete={completeCount} started={startedCount - completeCount} consensus={consensusSummary} onExport={exportSession} onClose={() => setExportOpen(false)} />}
+      {packet && draft && <div className="rating-layout"><PacketNavigator label={TASK_LABELS[taskFilter]} states={packetStates} activeIndex={packetIndex} onNavigate={navigatePacket} consensusMode={consensusMode} consensusStatuses={consensusMode ? consensusStates : undefined}>
         <details className="protocol-details"><summary>Bewertungsleitfaden</summary><pre>{packet.human_protocol}</pre></details><details className="rubric-details"><summary>Bewertungsraster</summary>{packet.rubric.dimensions.map(dimension => <div className="rubric-dimension" key={dimension.dimension_id}><strong>{dimension.dimension_id} · {dimension.name}</strong><p>{dimension.description}</p><dl>{Object.entries(dimension.bands).map(([band, description]) => <div key={band}><dt>{band}</dt><dd>{description}</dd></div>)}</dl></div>)}</details>
-      </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} referenceEvidence={referenceDimension && referenceAnswer ? { ids: referenceAnswer.evidence_segment_ids, label: referenceDimension.label, onToggle: toggleReferenceEvidence } : undefined}><section className="task-panel" aria-label="Ihre Bewertung"><div className="panel-title"><span>Ihre Bewertung</span></div>
+      </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} referenceEvidence={referenceDimension && referenceAnswer && !consensusFinalized ? { ids: referenceAnswer.evidence_segment_ids, label: referenceDimension.label, onToggle: toggleReferenceEvidence } : undefined}><section className="task-panel" aria-label="Ihre Bewertung"><div className="panel-title"><span>Ihre Bewertung</span></div>
         {packet.task === 'feedback_implied_score' ? <p className="draft-progress">{steps.filter((_, index) => !answerError(packet, draft, index)).length} / {steps.length} Dimensionen vollständig</p> : <RatingProgress packet={packet} draft={draft} activeIndex={criterionIndex} onNavigate={navigateCriterion} />}
         {packet.task !== 'feedback_implied_score' && <p className="criterion-position">{packet.task === 'reflection_reference_score' ? 'Dimension' : 'Kriterium'} {criterionIndex + 1} von {steps.length}</p>}
-        {packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} addSpanComment={addSpanComment} /> : packet.task === 'reflection_reference_score' ? <ReferenceRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} /> : <QualityRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} spanTags={spanTags} setSpanTags={editSpanTags} addSpanComment={addSpanComment} />}
+        <fieldset className="rating-edit-fieldset" disabled={consensusFinalized}>{packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} addSpanComment={addSpanComment} /> : packet.task === 'reflection_reference_score' ? <ReferenceRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} /> : <QualityRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} spanTags={spanTags} setSpanTags={editSpanTags} addSpanComment={addSpanComment} />}</fieldset>
+        {consensusMode && consensusRecord && <ConsensusControls key={packet.packet_id} status={consensusStatus} note={consensusRecord.note} answerComplete={packetState(packet) === 'complete'} answerErrors={consensusAnswerErrors(packet, draft)} finalizedAt={consensusRecord.finalized_at} finalizedBy={consensusRecord.finalized_by} finalizationHistory={consensusRecord.finalization_history} onNoteChange={editConsensusNote} onFlag={flagCurrentCase} onResume={resumeCurrentCase} onFinalize={finalizeCurrentCase} onReopen={reopenCurrentCase} />}
       </section><footer className="rating-footer"><PersistenceStatus state={persistence} /><div>{packet.task !== 'feedback_implied_score' && <button className="icon-button" disabled={criterionIndex === 0} onClick={() => navigateCriterion(criterionIndex - 1)} title="Vorheriges Kriterium" aria-label="Vorheriges Kriterium"><ChevronLeft size={16} /></button>}{packet.task !== 'feedback_implied_score' && criterionIndex < steps.length - 1 ? <button className="submit-button" onClick={nextCriterion}>Nächstes Kriterium<ChevronRight size={16} /></button> : <button className="submit-button" onClick={nextCase}>Nächster Fall<ChevronRight size={16} /></button>}</div></footer></SourceComparison></main></div>}
     </>}
   </AppShell>

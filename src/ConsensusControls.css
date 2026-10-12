@@ -1,0 +1,19 @@
+.consensus-controls { margin-top: 22px; padding: 16px 0 0; border-top: 1px solid var(--rating-line); }
+.consensus-controls > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+.consensus-controls h2 { margin: 0 0 8px; color: var(--ph-moss); font-size: 17px; }
+.consensus-status { display: inline-flex; min-height: 28px; align-items: center; padding: 3px 9px; border-left: 3px solid #748077; background: #f1f3f1; color: #35443b; font-size: 12px; font-weight: 700; }
+.consensus-status-in_progress { border-color: #54705c; background: #eaf0ea; }
+.consensus-status-flagged { border-color: #a65b19; background: #f7eee5; }
+.consensus-status-finalized { border-color: #176b4a; background: #e4efe7; }
+.consensus-controls .answers-complete, .consensus-controls .answers-incomplete { margin: 0; font-size: 13px; font-weight: 700; }
+.consensus-controls .answers-complete { color: #176b4a; }
+.consensus-controls .answers-incomplete { color: #6b6250; }
+.consensus-controls .field { margin-top: 12px; }
+.consensus-actions, .consensus-finalized { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.consensus-finalized p { margin: 0; color: #176b4a; font-size: 13px; font-weight: 700; }
+.consensus-errors { margin-top: 12px; padding: 10px 12px; border-left: 3px solid #a65b19; background: #f7eee5; color: #493c2b; font-size: 13px; }
+.consensus-errors ul { margin: 6px 0 0; padding-left: 20px; }
+.consensus-history { margin-top: 12px; font-size: 12px; }
+.consensus-history summary { min-height: 40px; padding: 10px 0; cursor: pointer; }
+.consensus-history ol { padding-left: 20px; line-height: 1.6; }
+@media (max-width: 600px) { .consensus-controls > header { align-items: flex-start; flex-direction: column; } .consensus-actions > button { flex: 1; } }

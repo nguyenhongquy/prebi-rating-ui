@@ -133,6 +133,22 @@ learner scores remain 0.0-3.0 in tenths, not quality ratings. Export a separate 
 packet campaign to adopt a revised protocol; do not edit existing packets or mix
 ratings across versions.
 
+## Expert Consensus Sessions
+
+Choose **Gemeinsame Konsensbewertung** before importing a packet bundle to create
+a shared-screen panel session. The pseudonymous panel ID is used as the session
+identity. Answers, evidence, and discussion notes autosave independently from
+case consensus status. A case must have all required answers before the panel can
+explicitly confirm consensus; flagged and unfinished cases remain in the session
+export and are excluded from the finalized research export.
+
+Consensus sessions use session schema `1.1.0` and a separate `::consensus`
+storage namespace. Their research export uses `ratings-consensus.json` schema
+`1.1.0`, preserves the task-specific response under `response`, and adds panel
+identity plus case-level finalization metadata. Existing individual sessions and
+their `1.0.0` `ratings-evaluation.json` export remain unchanged. The legacy
+feedback-implied-score task is not part of consensus sessions.
+
 ## Tests
 
 ### Synthetic Evaluation Packets

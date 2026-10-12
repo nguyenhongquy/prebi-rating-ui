@@ -16,6 +16,12 @@
 .rating-empty { min-height: 420px; display: grid; place-content: center; justify-items: center; gap: 10px; color: #89938c; }
 .rating-empty strong { color: #45544a; font-size: 14px; }
 .rating-empty span { font-size: 11px; }
+.evaluation-mode-choice { margin: 16px 0; padding: 12px; display: flex; flex-wrap: wrap; gap: 8px 20px; border: 1px solid var(--rating-line); border-radius: 4px; }
+.evaluation-mode-choice legend { padding: 0 6px; color: var(--ph-moss); font-size: 13px; font-weight: 700; }
+.evaluation-mode-choice label { min-height: 42px; display: flex; align-items: center; gap: 8px; color: #35443b; font-size: 14px; font-weight: 600; }
+.evaluation-mode-choice input { accent-color: var(--ph-green); }
+.mode-note { max-width: 62ch; color: var(--rating-muted); font-size: 13px; line-height: 1.5; }
+.rating-edit-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .rating-layout { min-height: calc(100vh - 171px); display: grid; grid-template-columns: 245px minmax(0, 1fr); }
 .packet-rail { padding: 19px 16px; border-right: 1px solid var(--rating-line); background: #f4f6f2; }
 .rail-heading { display: flex; justify-content: space-between; gap: 8px; color: #344139; font-size: 11px; }

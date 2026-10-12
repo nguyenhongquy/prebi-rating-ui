@@ -1,5 +1,5 @@
-import type { Draft, Packet, RatingTask } from './ratingTypes'
-import { canonicalJson, caseState, emptyDraft, evaluationSteps } from './ratingValidation'
+import type { ConsensusCaseState, ConsensusHistoryEntry, ConsensusRecord, Draft, Packet, RatingTask } from './ratingTypes'
+import { answerError, canonicalJson, caseState, emptyDraft, evaluationSteps, responseForDraft } from './ratingValidation'
 
 export type PendingEditor = {
   selection: { component: string; index: number; start: number; end: number; quote: string } | null
@@ -9,7 +9,7 @@ export type PendingEditor = {
 
 export type ExpertSession = {
   kind: 'prebi_expert_session'
-  schema_version: '1.0.0'
+  schema_version: '1.0.0' | '1.1.0'
   evaluator_id: string
   bundle_sha256: string
   packets: Packet[]
@@ -18,10 +18,15 @@ export type ExpertSession = {
   active_task: RatingTask
   active_index: number
   active_criterion: number
+  evaluation_mode?: 'expert_consensus'
+  panel_id?: string
+  panel_members?: string[]
+  consensus?: Record<string, ConsensusRecord>
 }
 
 const tasks = ['reflection_reference_score', 'assessment_quality', 'feedback_quality', 'feedback_implied_score']
 const tags = ['unsupported', 'inaccurate', 'vague', 'actionable', 'strength', 'concern', 'other']
+const consensusTasks = ['reflection_reference_score', 'assessment_quality', 'feedback_quality']
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Ungültiges Sitzungsobjekt.')
@@ -54,6 +59,116 @@ function identifiers(values: unknown[], field: string) {
   })
   if (new Set(ids).size !== ids.length) throw new Error('IDs müssen eindeutig sein.')
   return ids
+}
+
+function panelIdentifier(value: unknown) {
+  text(value)
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value)) throw new Error('Panel-ID muss ein pseudonymer Bezeichner ohne Leerzeichen sein.')
+  return value
+}
+
+export function assertConsensusBlinding(packets: Packet[]) {
+  const protectedField = /(judge|model|experimental.?condition|^condition(?:_|$))/i
+  function inspect(value: unknown): void {
+    if (Array.isArray(value)) {
+      value.forEach(inspect)
+      return
+    }
+    if (!value || typeof value !== 'object') return
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== 'condition_blinded' && protectedField.test(key)) throw new Error('Konsenspakete dürfen keine LLM-Judge-, Modell- oder Bedingungsinformationen enthalten.')
+      inspect(child)
+    }
+  }
+  packets.forEach(inspect)
+}
+
+export function emptyConsensus(packets: Packet[]): Record<string, ConsensusRecord> {
+  return Object.fromEntries(packets.filter(packet => consensusTasks.includes(packet.task)).map(packet => [packet.packet_id, {
+    status: 'in_progress', note: '', finalized_at: null, finalized_by: null, finalization_history: [],
+  }]))
+}
+
+export function consensusAnswerErrors(packet: Packet, draft: Draft) {
+  return evaluationSteps(packet).map((_, index) => answerError(packet, draft, index)).filter((error): error is string => error !== null)
+}
+
+export function consensusCaseState(packet: Packet, session: Pick<ExpertSession, 'drafts' | 'pending_editors' | 'consensus'>): ConsensusCaseState {
+  const record = session.consensus?.[packet.packet_id]
+  if (record?.status === 'finalized' || record?.status === 'flagged') return record.status
+  if (record?.note.trim()) return 'in_progress'
+  return expertCaseState(packet, session) === 'not_started' ? 'not_started' : 'in_progress'
+}
+
+export function filteredConsensusIndexes(statuses: ConsensusCaseState[], filter: 'all' | 'open' | 'flagged' | 'finalized', activeIndex: number) {
+  return statuses.map((_, index) => index).filter(index => {
+    const status = statuses[index]
+    if (filter === 'all' || index === activeIndex) return true
+    if (filter === 'open') return status !== 'finalized'
+    if (filter === 'flagged') return status === 'flagged'
+    return status === 'finalized'
+  })
+}
+
+export function finalizeConsensus(record: ConsensusRecord, packet: Packet, draft: Draft, panelId: string, finalizedAt = new Date().toISOString()): ConsensusRecord {
+  const errors = consensusAnswerErrors(packet, draft)
+  if (errors.length) throw new Error(errors.join(' '))
+  panelIdentifier(panelId)
+  if (!Number.isFinite(Date.parse(finalizedAt))) throw new Error('Ungültiger Finalisierungszeitpunkt.')
+  return { ...record, status: 'finalized', finalized_at: finalizedAt, finalized_by: panelId }
+}
+
+export function flagConsensus(record: ConsensusRecord): ConsensusRecord {
+  if (record.status === 'finalized') throw new Error('Ein finalisierter Konsens muss zuerst zur Bearbeitung geöffnet werden.')
+  return { ...record, status: 'flagged', finalized_at: null, finalized_by: null }
+}
+
+export function resumeConsensus(record: ConsensusRecord): ConsensusRecord {
+  if (record.status !== 'flagged') return record
+  return { ...record, status: 'in_progress', finalized_at: null, finalized_by: null }
+}
+
+export function reopenConsensus(record: ConsensusRecord): ConsensusRecord {
+  if (record.status !== 'finalized' || !record.finalized_at || !record.finalized_by) throw new Error('Nur ein erreichter Konsens kann zur Bearbeitung geöffnet werden.')
+  const history: ConsensusHistoryEntry[] = [...record.finalization_history, { finalized_at: record.finalized_at, finalized_by: record.finalized_by }]
+  return { ...record, status: 'in_progress', finalized_at: null, finalized_by: null, finalization_history: history }
+}
+
+export function researchExportPackets(session: ExpertSession): Packet[] {
+  if (session.evaluation_mode !== 'expert_consensus') return session.packets.filter(packet => expertCaseState(packet, session) === 'complete')
+  return session.packets.filter(packet => consensusTasks.includes(packet.task) && session.consensus?.[packet.packet_id]?.status === 'finalized'
+    && consensusAnswerErrors(packet, session.drafts[packet.packet_id]).length === 0)
+}
+
+export function consensusResearchExport(session: ExpertSession, createRatingId: () => string = () => crypto.randomUUID()) {
+  if (session.evaluation_mode !== 'expert_consensus' || !session.panel_id) throw new Error('Konsensmetadaten fehlen.')
+  const ratings = researchExportPackets(session).map(packet => {
+    const consensus = session.consensus?.[packet.packet_id]
+    if (!consensus?.finalized_at || consensus.status !== 'finalized') throw new Error('Nicht finalisierte Fälle dürfen nicht exportiert werden.')
+    return {
+      schema_version: '1.1.0',
+      rating_id: createRatingId(),
+      packet_id: packet.packet_id,
+      task: packet.task,
+      evaluator_type: 'human',
+      evaluator_id: session.panel_id,
+      protocol_id: packet.protocol_id,
+      protocol_version: packet.protocol_version,
+      packet_version: packet.packet_version,
+      display_output_sha256: packet.display_output_sha256,
+      displayed_reflection_sha256: packet.displayed_reflection_sha256,
+      submitted_at: consensus.finalized_at,
+      response: responseForDraft(packet, session.drafts[packet.packet_id]),
+      consensus,
+    }
+  })
+  return {
+    schema_version: '1.1.0',
+    evaluation_mode: 'expert_consensus',
+    panel_id: session.panel_id,
+    ...(session.panel_members ? { panel_members: session.panel_members } : {}),
+    ratings,
+  }
 }
 
 export function validatePackets(value: unknown): Packet[] {
@@ -286,13 +401,61 @@ export function legacyDraft(packet: Packet, value: unknown): Draft {
   return draft
 }
 
+function validTimestamp(value: unknown) {
+  text(value)
+  return Number.isFinite(Date.parse(value)) && !Number.isNaN(Date.parse(value))
+}
+
+function validateConsensusRecords(value: unknown, packets: Packet[], drafts: Record<string, Draft>, panelId: string): Record<string, ConsensusRecord> {
+  const eligiblePackets = packets.filter(packet => consensusTasks.includes(packet.task))
+  if (!eligiblePackets.length) throw new Error('Konsenssitzungen benötigen mindestens einen der drei primären Bewertungstypen.')
+  const records = exact(value, eligiblePackets.map(packet => packet.packet_id))
+  return Object.fromEntries(eligiblePackets.map(packet => {
+    const entry = exact(records[packet.packet_id], ['status', 'note', 'finalized_at', 'finalized_by', 'finalization_history'])
+    text(entry.status)
+    if (!['in_progress', 'flagged', 'finalized'].includes(entry.status)) throw new Error('Ungültiger Konsensstatus.')
+    text(entry.note)
+    if (!Array.isArray(entry.finalization_history)) throw new Error('Ungültiger Finalisierungsverlauf.')
+    const history = entry.finalization_history.map(item => {
+      const finalization = exact(item, ['finalized_at', 'finalized_by'])
+      if (!validTimestamp(finalization.finalized_at)) throw new Error('Ungültiger früherer Finalisierungszeitpunkt.')
+      if (panelIdentifier(finalization.finalized_by) !== panelId) throw new Error('Frühere Konsensmetadaten gehören zu einem anderen Panel.')
+      return { finalized_at: finalization.finalized_at, finalized_by: finalization.finalized_by } as ConsensusHistoryEntry
+    })
+    if (entry.status === 'finalized') {
+      if (!validTimestamp(entry.finalized_at) || panelIdentifier(entry.finalized_by) !== panelId) throw new Error('Finalisierter Konsens benötigt Zeitpunkt und Panel-ID.')
+      if (consensusAnswerErrors(packet, drafts[packet.packet_id]).length) throw new Error('Unvollständige Antworten können nicht als Konsens finalisiert werden.')
+    } else if (entry.finalized_at !== null || entry.finalized_by !== null) {
+      throw new Error('Nicht finalisierte Fälle dürfen keine aktuelle Finalisierung enthalten.')
+    }
+    return [packet.packet_id, { status: entry.status as ConsensusRecord['status'], note: entry.note, finalized_at: entry.finalized_at as string | null, finalized_by: entry.finalized_by as string | null, finalization_history: history }]
+  }))
+}
+
 export async function validateSession(value: unknown): Promise<ExpertSession> {
-  const hasEditors = Object.hasOwn(object(value), 'pending_editors')
-  const session = exact(value, ['kind', 'schema_version', 'evaluator_id', 'bundle_sha256', 'packets', 'drafts', 'active_task', 'active_index', 'active_criterion', ...(hasEditors ? ['pending_editors'] : [])])
-  if (session.kind !== 'prebi_expert_session' || session.schema_version !== '1.0.0') throw new Error('Unbekanntes Sitzungsformat.')
+  const rawSession = object(value)
+  const hasEditors = Object.hasOwn(rawSession, 'pending_editors')
+  const isConsensus = rawSession.schema_version === '1.1.0'
+  const baseFields = ['kind', 'schema_version', 'evaluator_id', 'bundle_sha256', 'packets', 'drafts', 'active_task', 'active_index', 'active_criterion']
+  const session = isConsensus
+    ? allowKeys(rawSession, [...baseFields, 'evaluation_mode', 'panel_id', 'consensus'], ['pending_editors', 'panel_members'])
+    : exact(rawSession, [...baseFields, ...(hasEditors ? ['pending_editors'] : [])])
+  if (session.kind !== 'prebi_expert_session' || !['1.0.0', '1.1.0'].includes(String(session.schema_version))) throw new Error('Unbekanntes Sitzungsformat.')
   text(session.evaluator_id)
   if (!session.evaluator_id.trim() || session.evaluator_id !== session.evaluator_id.trim()) throw new Error('Bewertungscode fehlt oder ist ungültig.')
+  let panelId: string | undefined
+  if (isConsensus) {
+    if (session.evaluation_mode !== 'expert_consensus') throw new Error('Unbekannter Bewertungsmodus.')
+    panelId = panelIdentifier(session.panel_id)
+    if (panelId !== session.evaluator_id) throw new Error('Panel-ID und Sitzungskennung müssen übereinstimmen.')
+    if (session.panel_members !== undefined) {
+      if (!Array.isArray(session.panel_members)) throw new Error('Ungültige Panel-Mitglieder.')
+      const members = session.panel_members.map(panelIdentifier)
+      if (new Set(members).size !== members.length) throw new Error('Panel-Mitglieder müssen eindeutig sein.')
+    }
+  }
   const packets = validatePackets(session.packets)
+  if (isConsensus) assertConsensusBlinding(packets)
   await checkPacketHashes(packets)
   if (session.bundle_sha256 !== await bundleHash(packets)) throw new Error('Sitzungsprüfsumme stimmt nicht mit den Paketen überein.')
   const drafts = exact(session.drafts, packets.map(packet => packet.packet_id))
@@ -306,15 +469,17 @@ export async function validateSession(value: unknown): Promise<ExpertSession> {
       return [id, validatePendingEditor(packet, editor)]
     }))
   }
+  const consensus = isConsensus ? validateConsensusRecords(session.consensus, packets, validatedDrafts, panelId!) : undefined
   const taskPackets = packets.filter(packet => packet.task === session.active_task)
   if (typeof session.active_task !== 'string' || !tasks.includes(session.active_task) || !Number.isInteger(session.active_index) || Number(session.active_index) < 0 || Number(session.active_index) >= taskPackets.length) throw new Error('Ungültige Fallposition.')
+  if (isConsensus && session.active_task === 'feedback_implied_score') throw new Error('Der Legacy-Punktwert ist nicht Teil des Konsensworkflows.')
   const activePacket = taskPackets[Number(session.active_index)]
   if (!Number.isInteger(session.active_criterion) || Number(session.active_criterion) < 0 || Number(session.active_criterion) >= evaluationSteps(activePacket).length) throw new Error('Ungültige Kriteriumsposition.')
-  return { ...session, packets, drafts: validatedDrafts, ...(hasEditors ? { pending_editors: pendingEditors } : {}) } as ExpertSession
+  return { ...session, packets, drafts: validatedDrafts, ...(hasEditors ? { pending_editors: pendingEditors } : {}), ...(isConsensus ? { consensus } : {}) } as ExpertSession
 }
 
-export function sessionKey(session: Pick<ExpertSession, 'evaluator_id' | 'bundle_sha256'>) {
-  return `expert::${session.evaluator_id}::${session.bundle_sha256}`
+export function sessionKey(session: Pick<ExpertSession, 'evaluator_id' | 'bundle_sha256'> & Partial<Pick<ExpertSession, 'evaluation_mode'>>) {
+  return `expert::${session.evaluator_id}::${session.bundle_sha256}${session.evaluation_mode === 'expert_consensus' ? '::consensus' : ''}`
 }
 
 export function assertSourcesMatch(packets: Packet[], existing: Packet[]) {

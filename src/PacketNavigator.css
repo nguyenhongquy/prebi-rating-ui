@@ -1,6 +1,9 @@
 .packet-rail { min-width: 0; }
 .packet-position { margin: 12px 0 8px; font-size: 16px; font-weight: 600; color: var(--ph-moss); }
 .packet-count { margin: 8px 0; font-size: 12px; color: var(--rating-muted); line-height: 1.5; }
+.case-filter { margin: 10px 0; display: grid; gap: 6px; color: #47564c; font-size: 12px; font-weight: 700; }
+.case-filter select { min-height: 42px; padding: 6px 9px; color: var(--ph-black); background: white; border: 1px solid var(--rating-line); border-radius: 4px; font: inherit; }
+.active-filter-note { margin: 8px 0; color: #5a5144; font-size: 11px; line-height: 1.45; }
 .packet-completion-progress { display: block; width: 100%; height: 6px; border: 0; accent-color: var(--ph-green); background: var(--rating-line); }
 .packet-completion-progress::-webkit-progress-bar { background: var(--rating-line); }
 .packet-completion-progress::-webkit-progress-value { background: var(--ph-green); }
@@ -8,6 +11,8 @@
 .packet-list { max-height: 240px; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; margin: 0; padding: 3px; list-style: none; }
 .packet-list button { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; min-height: 44px; padding: 4px; border: 1px solid var(--rating-line); border-radius: 4px; background: white; color: var(--ph-moss); font-size: 13px; }
 .packet-list button[aria-current="true"] { border-color: var(--ph-green); box-shadow: inset 0 -3px var(--ph-green); font-weight: 700; }
+.packet-list button.consensus-flagged { color: #80501c; }
+.packet-list button.consensus-finalized { color: #176b4a; }
 .packet-list svg { flex: 0 0 auto; }
 .packet-state-label { margin: 10px 0 18px; font-size: 13px; font-weight: 600; color: var(--ph-moss); }
 .submission-note { display: flex; align-items: center; gap: 8px; padding: 12px 0; font-size: 14px; color: var(--ph-moss); }

@@ -1,4 +1,14 @@
 export type RatingTask = 'reflection_reference_score' | 'assessment_quality' | 'feedback_quality' | 'feedback_implied_score'
+export type ConsensusStatus = 'in_progress' | 'flagged' | 'finalized'
+export type ConsensusCaseState = 'not_started' | ConsensusStatus
+export type ConsensusHistoryEntry = { finalized_at: string; finalized_by: string }
+export type ConsensusRecord = {
+  status: ConsensusStatus
+  note: string
+  finalized_at: string | null
+  finalized_by: string | null
+  finalization_history: ConsensusHistoryEntry[]
+}
 export type Criterion = { criterion_id: string; label: string; description: string; anchors?: Record<string, string> }
 export type Segment = { segment_id: string; order: number; text: string }
 export type SegmentAnnotation = { segment_id: string; dimension_id: string; skill_label?: string; level?: string }

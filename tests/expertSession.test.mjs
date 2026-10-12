@@ -18,13 +18,26 @@ try {
 } finally {
   rmSync(directory, { recursive: true, force: true })
 }
-const { bundleHash, validateSession, validateDraft, validatePackets, assertSourcesMatch, draftFromResponse, checkPacketHashes, sessionKey, expertCaseState, legacyDraft } = helpers
+const { bundleHash, validateSession, validateDraft, validatePackets, assertSourcesMatch, draftFromResponse, checkPacketHashes, sessionKey, expertCaseState, legacyDraft, emptyConsensus, consensusCaseState, consensusAnswerErrors, finalizeConsensus, flagConsensus, resumeConsensus, reopenConsensus, researchExportPackets, consensusResearchExport, filteredConsensusIndexes, assertConsensusBlinding } = helpers
 const { emptyDraft, caseState, responseForDraft, answerError } = validation
 const packets = validatePackets(JSON.parse(readFileSync(new URL('../public/examples/synthetic-evaluation-bundle.json', import.meta.url), 'utf8')).packets)
 const reference = packets.find(packet => packet.task === 'reflection_reference_score')
 const implied = packets.find(packet => packet.task === 'feedback_implied_score')
 const quality = packets.find(packet => packet.task === 'feedback_quality')
 const fresh = async () => ({ kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: 'EXPERT', bundle_sha256: await bundleHash(packets), packets, drafts: Object.fromEntries(packets.map(packet => [packet.packet_id, emptyDraft(packet)])), active_task: packets[0].task, active_index: 0, active_criterion: 0 })
+const freshConsensus = async () => {
+  const session = await fresh()
+  return { ...session, schema_version: '1.1.0', evaluator_id: 'expert-panel-01', evaluation_mode: 'expert_consensus', panel_id: 'expert-panel-01', panel_members: ['expert-01', 'expert-02'], consensus: emptyConsensus(packets.filter(packet => packet.task !== 'feedback_implied_score')) }
+}
+
+function completeDraft(packet, draft) {
+  if (packet.task === 'reflection_reference_score') {
+    for (const dimension of packet.score_dimensions) draft.referenceAnswers[dimension.dimension_id].score = Number(Object.keys(packet.rubric.dimensions.find(item => item.dimension_id === dimension.dimension_id).bands)[0])
+  } else {
+    for (const criterion of packet.criteria) draft.criterionRatings[criterion.criterion_id].score = packet.scale?.min ?? 1
+  }
+  return draft
+}
 
 test('partial session round-trips unanswered dimensions, nulls, identity and order', async () => {
   const session = await fresh()
@@ -98,6 +111,106 @@ test('legacy drafts without referenceAnswers restore with an empty task-specific
   const restored = await validateSession(session)
   assert.deepEqual(restored.drafts[quality.packet_id].referenceAnswers, {})
   assert.deepEqual(restored.drafts[quality.packet_id].criterionRatings, oldDraft.criterionRatings)
+})
+
+test('consensus sessions version panel identity and records without reinterpreting v1 sessions', async () => {
+  const session = await freshConsensus()
+  const restored = await validateSession(JSON.parse(JSON.stringify(session)))
+  assert.deepEqual(restored, session)
+  assert.equal(sessionKey(session), `expert::expert-panel-01::${session.bundle_sha256}::consensus`)
+  assert.equal((await validateSession(await fresh())).evaluation_mode, undefined)
+  assert.throws(() => assertConsensusBlinding([{ ...quality, output: { ...quality.output, llm_judge_ratings: [{ score: 5 }] } }]), /LLM-Judge/)
+  assert.throws(() => assertConsensusBlinding([{ ...quality, output: { ...quality.output, judge_explanation: 'hidden' } }]), /LLM-Judge/)
+  assert.throws(() => assertConsensusBlinding([{ ...quality, output: { ...quality.output, generation_model_name: 'hidden' } }]), /LLM-Judge/)
+  assert.throws(() => assertConsensusBlinding([{ ...quality, output: { ...quality.output, experimental_condition_id: 'hidden' } }]), /LLM-Judge/)
+  assert.throws(() => assertConsensusBlinding([{ ...quality, output: { ...quality.output, condition_label: 'hidden' } }]), /LLM-Judge/)
+  const invalidMembers = { ...session, panel_members: ['expert-01', 'expert-01'] }
+  await assert.rejects(validateSession(invalidMembers), /eindeutig/)
+  await assert.rejects(validateSession({ ...session, evaluator_id: 'expert panel', panel_id: 'expert panel' }), /pseudonymer Bezeichner/)
+})
+
+test('complete answers remain unfinalized until explicit consensus confirmation', async () => {
+  const session = await freshConsensus()
+  completeDraft(reference, session.drafts[reference.packet_id])
+  assert.equal(caseState(reference, session.drafts[reference.packet_id]), 'complete')
+  assert.deepEqual(consensusAnswerErrors(reference, session.drafts[reference.packet_id]), [])
+  assert.equal(consensusCaseState(reference, session), 'in_progress')
+  assert.deepEqual(researchExportPackets(session), [])
+  assert.throws(() => finalizeConsensus(session.consensus[reference.packet_id], reference, emptyDraft(reference), session.panel_id), /Punktwert/)
+  assert.deepEqual(researchExportPackets(await fresh()), [])
+})
+
+test('all three primary task packets use their own completeness rules before finalization', async () => {
+  const session = await freshConsensus()
+  const primaryPackets = packets.filter(packet => packet.task !== 'feedback_implied_score')
+  for (const packet of primaryPackets) {
+    completeDraft(packet, session.drafts[packet.packet_id])
+    assert.deepEqual(consensusAnswerErrors(packet, session.drafts[packet.packet_id]), [])
+    session.consensus[packet.packet_id] = finalizeConsensus(session.consensus[packet.packet_id], packet, session.drafts[packet.packet_id], session.panel_id, '2026-10-12T10:30:00Z')
+  }
+  assert.deepEqual(researchExportPackets(session).map(packet => packet.packet_id), primaryPackets.map(packet => packet.packet_id))
+})
+
+test('valid consensus finalizes explicitly, flags stay out of export, and reopening retains answers and history', async () => {
+  const session = await freshConsensus()
+  completeDraft(reference, session.drafts[reference.packet_id])
+  const finalizedAt = '2026-10-12T10:30:00Z'
+  session.consensus[reference.packet_id] = finalizeConsensus(session.consensus[reference.packet_id], reference, session.drafts[reference.packet_id], session.panel_id, finalizedAt)
+  session.consensus[quality.packet_id] = flagConsensus(session.consensus[quality.packet_id])
+  assert.equal(consensusCaseState(reference, session), 'finalized')
+  assert.equal(consensusCaseState(quality, session), 'flagged')
+  assert.deepEqual(researchExportPackets(session).map(packet => packet.packet_id), [reference.packet_id])
+  const exported = consensusResearchExport(session, () => 'synthetic-rating-id')
+  assert.equal(exported.schema_version, '1.1.0')
+  assert.equal(exported.panel_id, session.panel_id)
+  assert.deepEqual(exported.panel_members, session.panel_members)
+  assert.equal(exported.ratings.length, 1)
+  assert.equal(exported.ratings[0].schema_version, '1.1.0')
+  assert.deepEqual(exported.ratings[0].response, responseForDraft(reference, session.drafts[reference.packet_id]))
+  assert.equal(exported.ratings[0].consensus.status, 'finalized')
+  assert.equal(exported.ratings[0].submitted_at, finalizedAt)
+  const answers = structuredClone(session.drafts[reference.packet_id])
+  session.consensus[reference.packet_id] = reopenConsensus(session.consensus[reference.packet_id])
+  assert.equal(session.consensus[reference.packet_id].status, 'in_progress')
+  assert.equal(session.consensus[reference.packet_id].finalized_at, null)
+  assert.deepEqual(session.consensus[reference.packet_id].finalization_history, [{ finalized_at: finalizedAt, finalized_by: session.panel_id }])
+  assert.deepEqual(session.drafts[reference.packet_id], answers)
+  assert.deepEqual(researchExportPackets(session), [])
+  assert.equal(resumeConsensus(session.consensus[quality.packet_id]).status, 'in_progress')
+  assert.throws(() => flagConsensus({ ...session.consensus[reference.packet_id], status: 'finalized' }), /zuerst zur Bearbeitung geöffnet/)
+})
+
+test('consensus filters preserve packet order and keep a filtered-out active case visible', () => {
+  const statuses = ['not_started', 'in_progress', 'flagged', 'finalized']
+  assert.deepEqual(filteredConsensusIndexes(statuses, 'all', 2), [0, 1, 2, 3])
+  assert.deepEqual(filteredConsensusIndexes(statuses, 'open', 3), [0, 1, 2, 3])
+  assert.deepEqual(filteredConsensusIndexes(statuses, 'flagged', 0), [0, 2])
+  assert.deepEqual(filteredConsensusIndexes(statuses, 'finalized', 1), [1, 3])
+})
+
+test('legacy complete ratings remain eligible under the original individual export rule', async () => {
+  const session = await fresh()
+  completeDraft(reference, session.drafts[reference.packet_id])
+  assert.deepEqual(researchExportPackets(session).map(packet => packet.packet_id), [reference.packet_id])
+  assert.equal(session.evaluation_mode, undefined)
+})
+
+test('consensus timestamps, notes and finalized answer requirements survive session restore', async () => {
+  const session = await freshConsensus()
+  const record = session.consensus[reference.packet_id]
+  record.note = 'Gemeinsame Auslegung der SW-Stufe 2.'
+  completeDraft(reference, session.drafts[reference.packet_id])
+  session.consensus[reference.packet_id] = finalizeConsensus(record, reference, session.drafts[reference.packet_id], session.panel_id, '2026-10-12T10:30:00Z')
+  const restored = await validateSession(JSON.parse(JSON.stringify(session)))
+  assert.deepEqual(restored.consensus[reference.packet_id], session.consensus[reference.packet_id])
+  const noteOnly = await freshConsensus()
+  noteOnly.consensus[reference.packet_id].note = 'Fall gemeinsam diskutieren.'
+  assert.equal(consensusCaseState(reference, noteOnly), 'in_progress')
+  const invalid = structuredClone(session)
+  invalid.drafts[reference.packet_id].referenceAnswers.SW.score = null
+  await assert.rejects(validateSession(invalid), /Unvollständige Antworten/)
+  invalid.consensus[reference.packet_id].finalized_at = 'not-a-date'
+  await assert.rejects(validateSession(invalid))
 })
 
 test('bundle hash is independent of packet and object-key order, but source-sensitive', async () => {
@@ -241,12 +354,12 @@ test('workbench typechecks against the agreed shared interfaces without writing 
   const virtual = new Map([
     [join(root, 'src/localSessions.ts'), 'export declare function readSession<T>(key: string): Promise<T | undefined>; export declare function writeSession(key: string, value: unknown): Promise<void>; export declare function listSessions<T>(prefix: string): Promise<{key: string; value: T}[]>;'],
     [join(root, 'src/WorkflowSupport.tsx'), `import type { ReactNode } from 'react';
-      export declare function WorkflowHelp(props: {review?: boolean}): ReactNode;
+      export declare function WorkflowHelp(props: {review?: boolean; consensus?: boolean}): ReactNode;
       export declare function ResumePrompt(props: {count: number; total: number; onContinue: () => void; onRestart: () => void; onCancel: () => void; review?: boolean}): ReactNode;
-      export declare function ExportSummary(props: {total: number; complete: number; started: number; onExport: () => void; onClose: () => void; review?: boolean; feedback?: boolean}): ReactNode;
+      export declare function ExportSummary(props: {total: number; complete: number; started: number; onExport: () => void; onClose: () => void; review?: boolean; feedback?: boolean; consensus?: {finalized: number; inProgress: number; flagged: number; notStarted: number}}): ReactNode;
       export declare function PersistenceStatus(props: {state: 'saving' | 'saved' | 'error' | 'idle'}): ReactNode;`],
-    [join(root, 'src/PacketNavigator.tsx'), `import type {ReactNode} from 'react'; import type {CaseState} from './ratingValidation';
-      declare function PacketNavigator(props: {label: string; states: CaseState[]; activeIndex: number; onNavigate: (index: number) => void; children: ReactNode; review?: boolean}): ReactNode; export default PacketNavigator;`],
+    [join(root, 'src/PacketNavigator.tsx'), `import type {ReactNode} from 'react'; import type {CaseState} from './ratingValidation'; import type {ConsensusCaseState} from './ratingTypes';
+      declare function PacketNavigator(props: {label: string; states: CaseState[]; activeIndex: number; onNavigate: (index: number) => void; children: ReactNode; review?: boolean; consensusMode?: boolean; consensusStatuses?: ConsensusCaseState[]}): ReactNode; export default PacketNavigator;`],
   ])
   const options = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, jsx: ts.JsxEmit.ReactJSX, strict: true, skipLibCheck: true, noEmit: true, noUnusedLocals: true, noUnusedParameters: true, types: ['vite/client'] }
   const host = ts.createCompilerHost(options)
