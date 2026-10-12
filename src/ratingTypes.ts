@@ -1,9 +1,11 @@
-export type RatingTask = 'assessment_quality' | 'feedback_quality' | 'feedback_implied_score'
+export type RatingTask = 'reflection_reference_score' | 'assessment_quality' | 'feedback_quality' | 'feedback_implied_score'
 export type Criterion = { criterion_id: string; label: string; description: string; anchors?: Record<string, string> }
 export type Segment = { segment_id: string; order: number; text: string }
+export type SegmentAnnotation = { segment_id: string; dimension_id: string; skill_label?: string; level?: string }
 export type FeedbackItem = { text: string; evidence_segment_ids?: string[] }
 export type EvidenceSpan = { start_character: number; end_character: number; quote: string }
 export type CriterionAnswer = { score: number | null; unable_to_judge: boolean; comment: string }
+export type ReferenceScoreAnswer = { score: number | null; rationale: string; evidence_segment_ids: string[] }
 export type SpanComment = {
   feedback_component: string
   feedback_item_index: number
@@ -23,6 +25,7 @@ export type ScoreAnswer = {
 export type Draft = {
   criterionRatings: Record<string, CriterionAnswer>
   scoreAnswers: Record<string, ScoreAnswer>
+  referenceAnswers: Record<string, ReferenceScoreAnswer>
   overallComment: string
   spanComments: SpanComment[]
 }
@@ -36,6 +39,7 @@ export type Packet = {
   criteria?: Criterion[]
   scale?: { min: number; max: number; anchors: Record<string, string> }
   score_dimensions?: Array<{ dimension_id: string; label: string }>
+  segment_annotations?: SegmentAnnotation[]
   reflection: { segments: Segment[] }
   rubric: { version: string; dimensions: Array<{ dimension_id: string; name: string; description: string; bands: Record<string, string> }> }
   output?: {

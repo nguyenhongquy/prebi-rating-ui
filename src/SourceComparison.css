@@ -1,4 +1,5 @@
 .comparison-area { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: stretch; height: calc(100svh - 340px); min-height: 560px; position: sticky; top: 24px; padding: 16px 0; background: var(--ph-white); }
+.comparison-area.reflection-only { grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr); }
 .source-panel { min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; }
 .workspace-review { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .workspace-review .source-panel { position: static; height: auto; }
@@ -15,6 +16,15 @@
 .source-panel .segment { grid-template-columns: 32px minmax(0, 1fr); padding: 12px 8px; }
 .source-panel .segment-id { width: 32px; background: transparent; color: var(--rating-muted); font: 12px Figtree, Arial, sans-serif; }
 .source-panel .segment p { max-width: 70ch; font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
+.segment-annotations { margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 5px; list-style: none; }
+.segment-annotations li { min-height: 24px; padding: 3px 7px; display: inline-flex; align-items: center; gap: 6px; border-left: 3px solid #718078; background: #f0f3f0; color: #334239; font-size: 11px; }
+.segment-annotations strong { font-size: 10px; }
+.segment-annotations small { color: inherit; font-weight: 700; }
+.segment-annotations .annotation-sw { border-color: #176b4a; background: #e7f1e9; }
+.segment-annotations .annotation-ua { border-color: #a65b19; background: #f7eee5; }
+.segment-annotations .annotation-ha { border-color: #4e648c; background: #edf0f6; }
+.segment-evidence-choice { width: 32px; min-height: 44px; display: flex; align-items: center; gap: 5px; color: var(--rating-muted); font: 12px Figtree, Arial, sans-serif; }
+.segment-evidence-choice input { accent-color: var(--ph-green); }
 .source-panel .assessment-output, .source-panel .feedback-output { grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .source-panel .assessment-dimension { padding: 0 0 16px; border: 0; border-bottom: 1px solid var(--rating-line); border-radius: 0; background: transparent; }
 .source-panel .assessment-dimension header { font-size: 16px; gap: 12px; }
@@ -43,6 +53,7 @@
 @media (max-width: 1000px) {
   .rating-layout { grid-template-columns: 160px minmax(0, 1fr); }
   .comparison-area { gap: 16px; }
+  .comparison-area.reflection-only { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
 }
 @media (max-width: 850px) {
   .rating-layout { display: block; }
@@ -51,6 +62,7 @@
 }
 @media (max-width: 600px) {
   .comparison-area { grid-template-columns: minmax(0, 1fr); position: static; height: auto; min-height: 0; }
+  .comparison-area.reflection-only { grid-template-columns: minmax(0, 1fr); }
   .source-panel { height: 340px; position: static; }
   .workspace-review .output-panel, .workspace-review .review-feedback { flex: none; height: auto; }
   .workspace-review .output-panel .source-scroll, .workspace-review .review-feedback .source-scroll { overflow: visible; padding-right: 0; }

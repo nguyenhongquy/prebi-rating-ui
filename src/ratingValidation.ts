@@ -6,7 +6,8 @@ export type CaseState = 'not_started' | 'in_progress' | 'complete'
 export function emptyDraft(packet: Packet): Draft {
   return {
     criterionRatings: Object.fromEntries((packet.criteria ?? []).map(item => [item.criterion_id, { score: null, unable_to_judge: false, comment: '' }])),
-    scoreAnswers: Object.fromEntries((packet.score_dimensions ?? []).map(item => [item.dimension_id, { status: 'unanswered', score: null, confidence: 'not_inferable', rationale: '', feedback_evidence: [] }])),
+    scoreAnswers: Object.fromEntries((packet.task === 'feedback_implied_score' ? packet.score_dimensions ?? [] : []).map(item => [item.dimension_id, { status: 'unanswered', score: null, confidence: 'not_inferable', rationale: '', feedback_evidence: [] }])),
+    referenceAnswers: Object.fromEntries((packet.task === 'reflection_reference_score' ? packet.score_dimensions ?? [] : []).map(item => [item.dimension_id, { score: null, rationale: '', evidence_segment_ids: [] }])),
     overallComment: '',
     spanComments: [],
   }
@@ -16,7 +17,8 @@ export function caseState(packet: Packet, draft: Draft | undefined): CaseState {
   if (!draft) return 'not_started'
   const started = Boolean(draft.overallComment.trim() || draft.spanComments.length
     || Object.values(draft.criterionRatings).some(answer => answer.score !== null || answer.unable_to_judge || answer.comment.trim())
-    || Object.values(draft.scoreAnswers).some(answer => answer.status !== 'unanswered' || answer.rationale.trim() || answer.feedback_evidence.length))
+    || Object.values(draft.scoreAnswers).some(answer => answer.status !== 'unanswered' || answer.rationale.trim() || answer.feedback_evidence.length)
+    || Object.values(draft.referenceAnswers).some(answer => answer.score !== null || answer.rationale.trim() || answer.evidence_segment_ids.length))
   if (!started) return 'not_started'
   const steps = evaluationSteps(packet)
   return steps.length > 0 && steps.every((_, index) => !answerError(packet, draft, index)) ? 'complete' : 'in_progress'
@@ -32,6 +34,9 @@ export function canonicalJson(value: unknown): string {
 }
 
 export function responseForDraft(packet: Packet, draft: Draft) {
+  if (packet.task === 'reflection_reference_score') {
+    return { scores: (packet.score_dimensions ?? []).map(({ dimension_id }) => ({ dimension_id, ...draft.referenceAnswers[dimension_id] })) }
+  }
   return packet.task === 'feedback_implied_score'
     ? { scores: Object.entries(draft.scoreAnswers).map(([dimension_id, answer]) => ({ dimension_id, ...answer })), feedback_span_comments: draft.spanComments }
     : { criterion_ratings: draft.criterionRatings, overall_comment: draft.overallComment, feedback_span_comments: draft.spanComments }
@@ -44,12 +49,21 @@ export function submissionState(packet: Packet, draft: Draft | undefined, respon
 }
 
 export function evaluationSteps(packet: Packet) {
-  return packet.task === 'feedback_implied_score'
+  return packet.task === 'feedback_implied_score' || packet.task === 'reflection_reference_score'
     ? (packet.score_dimensions ?? []).map(dimension => ({ id: dimension.dimension_id, label: dimension.label }))
     : (packet.criteria ?? []).map(criterion => ({ id: criterion.criterion_id, label: criterion.label }))
 }
 
 export function answerError(packet: Packet, draft: Draft, index: number): string | null {
+  if (packet.task === 'reflection_reference_score') {
+    const dimension = packet.score_dimensions?.[index]
+    if (!dimension) return null
+    const answer = draft.referenceAnswers[dimension.dimension_id]
+    const rubricDimension = packet.rubric.dimensions.find(item => item.dimension_id === dimension.dimension_id)
+    if (!answer || answer.score === null) return `Wählen Sie für ${dimension.label} einen Punktwert.`
+    if (!rubricDimension || !Object.hasOwn(rubricDimension.bands, String(answer.score))) return `Wählen Sie für ${dimension.label} einen Punktwert aus dem Bewertungsraster.`
+    return null
+  }
   if (packet.task === 'feedback_implied_score') {
     const dimension = packet.score_dimensions?.[index]
     if (!dimension) return null

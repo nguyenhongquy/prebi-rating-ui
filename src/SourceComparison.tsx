@@ -56,8 +56,8 @@ export function FeedbackHeading({ component }: { component: keyof typeof compone
   return <h3 className={`feedback-heading feedback-${component}`}><Icon size={17} aria-hidden="true" />{componentLabels[component]}</h3>
 }
 
-export function ComparisonWorkspace({ reflection, children }: { reflection: ReactNode; children: ReactNode }) {
-  return <div className="comparison-area">{reflection}<div className="workspace-review">{children}</div></div>
+export function ComparisonWorkspace({ reflection, children, reflectionOnly = false }: { reflection: ReactNode; children: ReactNode; reflectionOnly?: boolean }) {
+  return <div className={`comparison-area${reflectionOnly ? ' reflection-only' : ''}`}>{reflection}<div className="workspace-review">{children}</div></div>
 }
 
 export function scrollToEvidence(container: HTMLDivElement | null, id: string) {
@@ -71,12 +71,13 @@ export function scrollToEvidence(container: HTMLDivElement | null, id: string) {
   if (containerBounds.bottom <= 0 || containerBounds.top >= window.innerHeight) container.scrollIntoView({ block: 'start' })
 }
 
-export function ReflectionViewer({ segments, activeId, activeIds = [], scrollRef, evidenceSelection }: { segments: Segment[]; activeId: string | null; activeIds?: string[]; scrollRef: RefObject<HTMLDivElement | null>; evidenceSelection?: { ids: string[]; onToggle: (id: string) => void; label: string } }) {
+export function ReflectionViewer({ segments, annotations = [], dimensionLabels = {}, activeId, activeIds = [], scrollRef, evidenceSelection }: { segments: Segment[]; annotations?: NonNullable<Packet['segment_annotations']>; dimensionLabels?: Record<string, string>; activeId: string | null; activeIds?: string[]; scrollRef: RefObject<HTMLDivElement | null>; evidenceSelection?: { ids: string[]; onToggle: (id: string) => void; label: string } }) {
+  const dimensions = new Map(Object.entries(dimensionLabels))
   return <section className="source-panel" aria-label="Reflexion">
     <div className="panel-title"><h2>Reflexion</h2><small>{segments.length} {segments.length === 1 ? 'Segment' : 'Segmente'}</small></div>
     <div ref={scrollRef} className="source-scroll segments" tabIndex={0} aria-label="Reflexionssegmente">
       {segments.map(segment => <article className={`segment${activeId === segment.segment_id || activeIds.includes(segment.segment_id) || evidenceSelection?.ids.includes(segment.segment_id) ? ' evidence-highlight' : ''}`} key={segment.segment_id} data-segment-id={segment.segment_id} aria-label={`Reflexionssegment ${segment.order + 1}${activeId === segment.segment_id || activeIds.includes(segment.segment_id) ? ', hervorgehobener Beleg' : ''}`}>
-        {evidenceSelection ? <label className="segment-evidence-choice"><input type="checkbox" aria-label={`Segment ${segment.order + 1} als Beleg für ${evidenceSelection.label}`} checked={evidenceSelection.ids.includes(segment.segment_id)} onChange={() => evidenceSelection.onToggle(segment.segment_id)} /><span>{segment.order + 1}</span></label> : <span className="segment-id">{segment.order + 1}</span>}<p>{segment.text}</p>
+        {evidenceSelection ? <label className="segment-evidence-choice"><input type="checkbox" aria-label={`Segment ${segment.order + 1} als Beleg für ${evidenceSelection.label}`} checked={evidenceSelection.ids.includes(segment.segment_id)} onChange={() => evidenceSelection.onToggle(segment.segment_id)} /><span>{segment.order + 1}</span></label> : <span className="segment-id">{segment.order + 1}</span>}<div><p>{segment.text}</p>{annotations.filter(annotation => annotation.segment_id === segment.segment_id).length > 0 && <ul className="segment-annotations" aria-label={`Expertenannotationen zu Segment ${segment.order + 1}`}>{annotations.filter(annotation => annotation.segment_id === segment.segment_id).map((annotation, index) => <li className={`annotation-${annotation.dimension_id.toLowerCase()}`} key={`${annotation.dimension_id}-${index}`}><strong>{dimensions.get(annotation.dimension_id) ?? annotation.dimension_id}</strong>{annotation.skill_label && <span>{annotation.skill_label}</span>}{annotation.level && <small>{annotation.level}</small>}</li>)}</ul>}</div>
       </article>)}
     </div>
   </section>
@@ -101,7 +102,7 @@ export function OutputViewer({ packet, onSelection, evidence, selectedItem, onSh
   </section>
 }
 
-export default function SourceComparison({ packet, onSelection, children }: { packet: Packet; onSelection: FeedbackSelectionHandler; children?: ReactNode }) {
+export default function SourceComparison({ packet, onSelection, children, referenceEvidence }: { packet: Packet; onSelection: FeedbackSelectionHandler; children?: ReactNode; referenceEvidence?: { ids: string[]; label: string; onToggle: (id: string) => void } }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
@@ -118,8 +119,9 @@ export default function SourceComparison({ packet, onSelection, children }: { pa
     setSelectedId(null)
     if (ids[0]) scrollToEvidence(scrollRef.current, ids[0])
   }
-  return <ComparisonWorkspace reflection={<ReflectionViewer segments={packet.reflection.segments} activeId={previewId ?? selectedId} activeIds={selectedIds} scrollRef={scrollRef} />}>
-    <OutputViewer packet={packet} onSelection={onSelection} selectedItem={selectedItem} onShowItem={showItem} evidence={{ selectedId, selectedIds, onPreview: setPreviewId, onActivate: activateEvidence }} />
+  const reflectionOnly = packet.task === 'reflection_reference_score'
+  return <ComparisonWorkspace reflectionOnly={reflectionOnly} reflection={<ReflectionViewer segments={packet.reflection.segments} annotations={reflectionOnly ? packet.segment_annotations : undefined} dimensionLabels={Object.fromEntries((packet.score_dimensions ?? []).map(dimension => [dimension.dimension_id, dimension.label]))} activeId={previewId ?? selectedId} activeIds={selectedIds} scrollRef={scrollRef} evidenceSelection={reflectionOnly ? referenceEvidence : undefined} />}>
+    {!reflectionOnly && <OutputViewer packet={packet} onSelection={onSelection} selectedItem={selectedItem} onShowItem={showItem} evidence={{ selectedId, selectedIds, onPreview: setPreviewId, onActivate: activateEvidence }} />}
     {children}
   </ComparisonWorkspace>
 }

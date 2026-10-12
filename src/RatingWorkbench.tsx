@@ -33,9 +33,10 @@ type SavedRating = {
 }
 
 const TASK_LABELS: Record<RatingTask, string> = {
-  feedback_implied_score: 'Aus Feedback abgeleiteter Punktwert',
+  reflection_reference_score: 'Referenzbewertung der Reflexion',
   assessment_quality: 'Qualität der Einschätzung',
   feedback_quality: 'Feedbackqualität',
+  feedback_implied_score: 'Aus Feedback abgeleiteter Punktwert',
 }
 const STORAGE_KEY = 'prebi-rating-workbench-v1'
 const TAGS = ['unsupported', 'inaccurate', 'vague', 'actionable', 'strength', 'concern', 'other']
@@ -43,6 +44,10 @@ const TAG_LABELS: Record<string, string> = { unsupported: 'Nicht belegt', inaccu
 
 function queueKey(packet: Packet, evaluatorId: string) {
   return `${evaluatorId.trim()}::${packet.packet_id}`
+}
+
+function firstTask(packets: Packet[]): RatingTask {
+  return (Object.keys(TASK_LABELS) as RatingTask[]).find(task => packets.some(packet => packet.task === task)) ?? packets[0].task
 }
 
 function downloadJson(filename: string, value: unknown) {
@@ -83,7 +88,7 @@ function checkLegacySources(packets: Packet[]) {
 }
 
 function freshSession(session: ExpertSession): ExpertSession {
-  return { ...session, drafts: Object.fromEntries(session.packets.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, active_task: session.packets[0].task, active_index: 0, active_criterion: 0 }
+  return { ...session, drafts: Object.fromEntries(session.packets.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, active_task: firstTask(session.packets), active_index: 0, active_criterion: 0 }
 }
 
 type PendingSession = {
@@ -340,7 +345,7 @@ export default function RatingWorkbench() {
         const next = Math.floor(Math.random() * (index + 1))
         ;[ordered[index], ordered[next]] = [ordered[next], ordered[index]]
       }
-      const incoming: ExpertSession = { kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: evaluatorId.trim(), bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, active_task: ordered[0].task, active_index: 0, active_criterion: 0 }
+      const incoming: ExpertSession = { kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: evaluatorId.trim(), bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, active_task: firstTask(ordered), active_index: 0, active_criterion: 0 }
       await prepareSession(incoming, false)
     })
   }
@@ -406,6 +411,16 @@ export default function RatingWorkbench() {
   }
 
   const pendingStarted = pending?.saved.packets.filter(packet => expertCaseState(packet, pending.saved) !== 'not_started').length ?? 0
+  const referenceDimension = packet?.task === 'reflection_reference_score' ? packet.score_dimensions?.[criterionIndex] : undefined
+  const referenceAnswer = referenceDimension && draft ? draft.referenceAnswers[referenceDimension.dimension_id] : undefined
+
+  function toggleReferenceEvidence(id: string) {
+    if (!referenceDimension || !draft || !referenceAnswer) return
+    const evidence = new Set(referenceAnswer.evidence_segment_ids)
+    if (evidence.has(id)) evidence.delete(id)
+    else evidence.add(id)
+    updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [referenceDimension.dimension_id]: { ...referenceAnswer, evidence_segment_ids: [...evidence] } } })
+  }
 
   return <AppShell workflow="Expert evaluation" context={session ? <><span>{TASK_LABELS[taskFilter]} · {doneCount} / {taskPackets.length} Fälle vollständig</span><label className="annotator-field">Bewertungscode<input value={session.evaluator_id} disabled autoComplete="off" /></label></> : undefined}>
     {error && <div className="rating-error" role="alert">{error}</div>}
@@ -424,10 +439,10 @@ export default function RatingWorkbench() {
       {exportOpen && <ExportSummary total={packets.length} complete={completeCount} started={startedCount - completeCount} onExport={exportSession} onClose={() => setExportOpen(false)} />}
       {packet && draft && <div className="rating-layout"><PacketNavigator label={TASK_LABELS[taskFilter]} states={packetStates} activeIndex={packetIndex} onNavigate={navigatePacket}>
         <details className="protocol-details"><summary>Bewertungsleitfaden</summary><pre>{packet.human_protocol}</pre></details><details className="rubric-details"><summary>Bewertungsraster</summary>{packet.rubric.dimensions.map(dimension => <div className="rubric-dimension" key={dimension.dimension_id}><strong>{dimension.dimension_id} · {dimension.name}</strong><p>{dimension.description}</p><dl>{Object.entries(dimension.bands).map(([band, description]) => <div key={band}><dt>{band}</dt><dd>{description}</dd></div>)}</dl></div>)}</details>
-      </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection}><section className="task-panel" aria-label="Ihre Bewertung"><div className="panel-title"><span>Ihre Bewertung</span></div>
+      </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} referenceEvidence={referenceDimension && referenceAnswer ? { ids: referenceAnswer.evidence_segment_ids, label: referenceDimension.label, onToggle: toggleReferenceEvidence } : undefined}><section className="task-panel" aria-label="Ihre Bewertung"><div className="panel-title"><span>Ihre Bewertung</span></div>
         {packet.task === 'feedback_implied_score' ? <p className="draft-progress">{steps.filter((_, index) => !answerError(packet, draft, index)).length} / {steps.length} Dimensionen vollständig</p> : <RatingProgress packet={packet} draft={draft} activeIndex={criterionIndex} onNavigate={navigateCriterion} />}
-        {packet.task !== 'feedback_implied_score' && <p className="criterion-position">Kriterium {criterionIndex + 1} von {steps.length}</p>}
-        {packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} addSpanComment={addSpanComment} /> : <QualityRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} spanTags={spanTags} setSpanTags={editSpanTags} addSpanComment={addSpanComment} />}
+        {packet.task !== 'feedback_implied_score' && <p className="criterion-position">{packet.task === 'reflection_reference_score' ? 'Dimension' : 'Kriterium'} {criterionIndex + 1} von {steps.length}</p>}
+        {packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} addSpanComment={addSpanComment} /> : packet.task === 'reflection_reference_score' ? <ReferenceRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} /> : <QualityRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} spanTags={spanTags} setSpanTags={editSpanTags} addSpanComment={addSpanComment} />}
       </section><footer className="rating-footer"><PersistenceStatus state={persistence} /><div>{packet.task !== 'feedback_implied_score' && <button className="icon-button" disabled={criterionIndex === 0} onClick={() => navigateCriterion(criterionIndex - 1)} title="Vorheriges Kriterium" aria-label="Vorheriges Kriterium"><ChevronLeft size={16} /></button>}{packet.task !== 'feedback_implied_score' && criterionIndex < steps.length - 1 ? <button className="submit-button" onClick={nextCriterion}>Nächstes Kriterium<ChevronRight size={16} /></button> : <button className="submit-button" onClick={nextCase}>Nächster Fall<ChevronRight size={16} /></button>}</div></footer></SourceComparison></main></div>}
     </>}
   </AppShell>
@@ -452,6 +467,25 @@ function ScoreCoding({ packet, draft, activeIndex, updateDraft, selectedSpan, sp
       </article>
     })}</div>
   </div>
+}
+
+function ReferenceRating({ packet, draft, activeIndex, updateDraft }: {
+  packet: Packet; draft: Draft; activeIndex: number; updateDraft: (patch: Partial<Draft>) => void
+}) {
+  const dimension = packet.score_dimensions?.[activeIndex]
+  if (!dimension) return null
+  const rubric = packet.rubric.dimensions.find(item => item.dimension_id === dimension.dimension_id)
+  const answer = draft.referenceAnswers[dimension.dimension_id]
+  if (!rubric || !answer) return null
+  const bands = Object.entries(rubric.bands).sort(([left], [right]) => Number(left) - Number(right))
+  const segmentNumbers = new Map(packet.reflection.segments.map(segment => [segment.segment_id, segment.order + 1]))
+  return <article className="criterion reference-criterion">
+    <div className="criterion-heading"><div><h3>{dimension.dimension_id} · {dimension.label}</h3><p>{rubric.description}</p></div></div>
+    <dl className="criterion-anchors">{bands.map(([score, descriptor]) => <div key={score}><dt>{score}</dt><dd>{descriptor}</dd></div>)}</dl>
+    <div className="reference-score-choices" role="group" aria-label={`${dimension.label} · Referenzpunktwert`}>{bands.map(([score, descriptor]) => <button type="button" key={score} className={answer.score === Number(score) ? 'chosen' : ''} aria-pressed={answer.score === Number(score)} onClick={() => updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimension.dimension_id]: { ...answer, score: Number(score) } } })}><strong>{score}</strong><span>{descriptor}</span></button>)}</div>
+    <label className="field"><span>{dimension.label} · Begründung <small>Optional</small></span><textarea rows={3} value={answer.rationale} onChange={event => updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimension.dimension_id]: { ...answer, rationale: event.target.value } } })} /></label>
+    <div className="reference-evidence-summary"><strong>Belegsegmente <small>Optional</small></strong>{answer.evidence_segment_ids.length ? answer.evidence_segment_ids.map(id => <button className="text-button" type="button" key={id} onClick={() => updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimension.dimension_id]: { ...answer, evidence_segment_ids: answer.evidence_segment_ids.filter(item => item !== id) } } })}>Segment {segmentNumbers.get(id)} entfernen</button>) : <span>Noch keine Segmente ausgewählt</span>}</div>
+  </article>
 }
 
 function QualityRating({ packet, draft, activeIndex, updateDraft, selectedSpan, spanComment, setSpanComment, spanTags, setSpanTags, addSpanComment }: {

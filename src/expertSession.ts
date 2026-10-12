@@ -20,7 +20,7 @@ export type ExpertSession = {
   active_criterion: number
 }
 
-const tasks = ['assessment_quality', 'feedback_quality', 'feedback_implied_score']
+const tasks = ['reflection_reference_score', 'assessment_quality', 'feedback_quality', 'feedback_implied_score']
 const tags = ['unsupported', 'inaccurate', 'vague', 'actionable', 'strength', 'concern', 'other']
 
 function object(value: unknown): Record<string, unknown> {
@@ -31,6 +31,13 @@ function object(value: unknown): Record<string, unknown> {
 function exact(value: unknown, keys: string[]) {
   const record = object(value)
   if (Object.keys(record).length !== keys.length || keys.some(key => !Object.hasOwn(record, key))) throw new Error('Unbekannte oder fehlende Felder in der Sitzung.')
+  return record
+}
+
+function allowKeys(value: unknown, required: string[], optional: string[] = []) {
+  const record = object(value)
+  const allowed = [...required, ...optional]
+  if (required.some(key => !Object.hasOwn(record, key)) || Object.keys(record).some(key => !allowed.includes(key))) throw new Error('Ungültige Felder im Referenzpaket.')
   return record
 }
 
@@ -55,26 +62,68 @@ export function validatePackets(value: unknown): Packet[] {
   for (const item of value) {
     const packet = object(item)
     if (packet.condition_blinded !== true || typeof packet.task !== 'string' || !tasks.includes(packet.task)) throw new Error('Die Datei muss verblindete Bewertungspakete enthalten.')
+    if (packet.task === 'reflection_reference_score') {
+      allowKeys(packet, ['packet_id', 'task', 'packet_version', 'protocol_id', 'protocol_version', 'human_protocol', 'condition_blinded', 'reflection', 'rubric', 'score_dimensions'], ['segment_annotations', 'displayed_reflection_sha256'])
+    }
     for (const field of ['packet_version', 'protocol_id', 'protocol_version', 'human_protocol']) text(packet[field])
     const reflection = object(packet.reflection)
+    if (packet.task === 'reflection_reference_score') allowKeys(reflection, ['segments'])
     if (!Array.isArray(reflection.segments)) throw new Error('Ungültige Reflexion.')
     identifiers(reflection.segments, 'segment_id')
+    const segmentOrders = new Set<number>()
     for (const segment of reflection.segments) {
       const entry = object(segment)
+      if (packet.task === 'reflection_reference_score') allowKeys(entry, ['segment_id', 'order', 'text'])
       text(entry.text)
       if (!Number.isInteger(entry.order) || Number(entry.order) < 0) throw new Error('Ungültige Segmentposition.')
+      if (packet.task === 'reflection_reference_score' && (segmentOrders.has(Number(entry.order)) || !Number.isSafeInteger(entry.order))) throw new Error('Segmentpositionen müssen eindeutig und ganzzahlig sein.')
+      segmentOrders.add(Number(entry.order))
     }
     const rubric = object(packet.rubric)
+    if (packet.task === 'reflection_reference_score') allowKeys(rubric, ['version', 'dimensions'])
     text(rubric.version)
     if (!Array.isArray(rubric.dimensions)) throw new Error('Ungültiges Bewertungsraster.')
     identifiers(rubric.dimensions, 'dimension_id')
     for (const dimension of rubric.dimensions) {
       const entry = object(dimension)
+      if (packet.task === 'reflection_reference_score') allowKeys(entry, ['dimension_id', 'name', 'description', 'bands'])
       text(entry.name)
       text(entry.description)
       Object.values(object(entry.bands)).forEach(text)
     }
-    if (packet.task === 'feedback_implied_score') {
+    if (packet.task === 'reflection_reference_score') {
+      const segmentIds = new Set(reflection.segments.map(segment => String(object(segment).segment_id)))
+      const rubricIds = new Set(rubric.dimensions.map(dimension => String(object(dimension).dimension_id)))
+      if (!Array.isArray(packet.score_dimensions) || !packet.score_dimensions.length) throw new Error('Bewertungsdimensionen fehlen.')
+      identifiers(packet.score_dimensions, 'dimension_id')
+      if (packet.score_dimensions.length !== rubricIds.size) throw new Error('Bewertungsdimensionen stimmen nicht mit dem Raster überein.')
+      for (const dimension of packet.score_dimensions) {
+        const entry = object(dimension)
+        allowKeys(entry, ['dimension_id', 'label'])
+        text(entry.label)
+        if (!rubricIds.has(String(entry.dimension_id))) throw new Error('Bewertungsdimension fehlt im Raster.')
+      }
+      for (const dimension of rubric.dimensions) {
+        const entry = object(dimension)
+        const bands = object(entry.bands)
+        const bandKeys = Object.keys(bands)
+        const numericBands = bandKeys.map(Number)
+        if (!bandKeys.length || bandKeys.some((key, index) => !/^-?\d+$/.test(key) || !Number.isSafeInteger(numericBands[index])) || new Set(numericBands).size !== bandKeys.length) throw new Error('Bewertungsraster benötigt numerische Punktwertanker.')
+      }
+      if (packet.segment_annotations !== undefined) {
+        if (!Array.isArray(packet.segment_annotations)) throw new Error('Ungültige Segmentannotationen.')
+        for (const annotation of packet.segment_annotations) {
+          const entry = object(annotation)
+          const keys = ['segment_id', 'dimension_id', 'skill_label', 'level']
+          if (Object.keys(entry).some(key => !keys.includes(key)) || !Object.hasOwn(entry, 'segment_id') || !Object.hasOwn(entry, 'dimension_id')) throw new Error('Ungültige Segmentannotation.')
+          text(entry.segment_id)
+          text(entry.dimension_id)
+          if (!segmentIds.has(entry.segment_id) || !rubricIds.has(entry.dimension_id)) throw new Error('Segmentannotation verweist auf eine unbekannte Reflexion oder Dimension.')
+          if (entry.skill_label !== undefined) text(entry.skill_label)
+          if (entry.level !== undefined) text(entry.level)
+        }
+      }
+    } else if (packet.task === 'feedback_implied_score') {
       text(packet.human_feedback)
       if (!Array.isArray(packet.score_dimensions) || !packet.score_dimensions.length) throw new Error('Dimensionen fehlen.')
       identifiers(packet.score_dimensions, 'dimension_id')
@@ -151,7 +200,10 @@ function span(value: unknown, source: string) {
 }
 
 export function validateDraft(packet: Packet, value: unknown): Draft {
-  const draft = exact(value, ['criterionRatings', 'scoreAnswers', 'overallComment', 'spanComments'])
+  const source = object(value)
+  const requiredDraftFields = ['criterionRatings', 'scoreAnswers', 'overallComment', 'spanComments']
+  if (requiredDraftFields.some(field => !Object.hasOwn(source, field)) || Object.keys(source).some(field => ![...requiredDraftFields, 'referenceAnswers'].includes(field))) throw new Error('Unbekannte oder fehlende Felder in der Sitzung.')
+  const draft: Record<string, unknown> = { ...source, referenceAnswers: source.referenceAnswers ?? emptyDraft(packet).referenceAnswers }
   text(draft.overallComment)
   const criteria = exact(draft.criterionRatings, Object.keys(emptyDraft(packet).criterionRatings))
   for (const criterion of packet.criteria ?? []) {
@@ -162,7 +214,7 @@ export function validateDraft(packet: Packet, value: unknown): Draft {
     if (answer.score !== null && (!Number.isInteger(answer.score) || Number(answer.score) < (packet.scale?.min ?? 1) || Number(answer.score) > (packet.scale?.max ?? 5))) throw new Error('Punktwert liegt außerhalb der Skala.')
   }
   const answers = exact(draft.scoreAnswers, Object.keys(emptyDraft(packet).scoreAnswers))
-  for (const dimension of packet.score_dimensions ?? []) {
+  for (const dimension of packet.task === 'feedback_implied_score' ? packet.score_dimensions ?? [] : []) {
     const answer = exact(answers[dimension.dimension_id], ['status', 'score', 'confidence', 'rationale', 'feedback_evidence'])
     if (typeof answer.status !== 'string' || !['unanswered', 'inferred_from_feedback', 'not_inferable'].includes(answer.status)
       || typeof answer.confidence !== 'string' || !['low', 'medium', 'high', 'not_inferable'].includes(answer.confidence)) throw new Error('Ungültiger Antwortstatus oder Sicherheit.')
@@ -176,8 +228,17 @@ export function validateDraft(packet: Packet, value: unknown): Draft {
       if (entry.quote !== span(entry, packet.human_feedback ?? '')) throw new Error('Textbeleg stimmt nicht mit der Quelle überein.')
     }
   }
-  if (!Array.isArray(draft.spanComments)) throw new Error('Ungültige Textkommentare.')
+  const referenceAnswers = exact(draft.referenceAnswers, Object.keys(emptyDraft(packet).referenceAnswers))
   const segmentIds = new Set(packet.reflection.segments.map(segment => segment.segment_id))
+  for (const dimension of packet.task === 'reflection_reference_score' ? packet.score_dimensions ?? [] : []) {
+    const answer = exact(referenceAnswers[dimension.dimension_id], ['score', 'rationale', 'evidence_segment_ids'])
+    score(answer.score)
+    text(answer.rationale)
+    const rubricDimension = packet.rubric.dimensions.find(item => item.dimension_id === dimension.dimension_id)
+    if (answer.score !== null && (!Number.isInteger(answer.score) || !rubricDimension || !Object.hasOwn(rubricDimension.bands, String(answer.score)))) throw new Error('Punktwert liegt außerhalb des Bewertungsrasters.')
+    if (!Array.isArray(answer.evidence_segment_ids) || !answer.evidence_segment_ids.every(id => typeof id === 'string' && segmentIds.has(id)) || new Set(answer.evidence_segment_ids).size !== answer.evidence_segment_ids.length) throw new Error('Ungültige Reflexionsbelege.')
+  }
+  if (!Array.isArray(draft.spanComments)) throw new Error('Ungültige Textkommentare.')
   for (const comment of draft.spanComments) {
     const entry = exact(comment, ['feedback_component', 'feedback_item_index', 'start_character', 'end_character', 'comment', 'tags', 'linked_reflection_segment_ids'])
     text(entry.comment)
@@ -191,7 +252,7 @@ export function validateDraft(packet: Packet, value: unknown): Draft {
     if (!Array.isArray(entry.tags) || !entry.tags.every(tag => typeof tag === 'string' && tags.includes(tag)) || new Set(entry.tags).size !== entry.tags.length) throw new Error('Ungültige Kommentar-Tags.')
     if (!Array.isArray(entry.linked_reflection_segment_ids) || !entry.linked_reflection_segment_ids.every(id => typeof id === 'string' && segmentIds.has(id)) || new Set(entry.linked_reflection_segment_ids).size !== entry.linked_reflection_segment_ids.length) throw new Error('Ungültige Reflexionsbelege.')
   }
-  return JSON.parse(JSON.stringify(value)) as Draft
+  return JSON.parse(JSON.stringify({ ...source, referenceAnswers })) as Draft
 }
 
 export function validatePendingEditor(packet: Packet, value: unknown): PendingEditor {
@@ -267,6 +328,17 @@ export function assertSourcesMatch(packets: Packet[], existing: Packet[]) {
 export function draftFromResponse(packet: Packet, value: unknown): Draft {
   const response = object(value)
   const draft = emptyDraft(packet)
+  if (packet.task === 'reflection_reference_score') {
+    if (!Array.isArray(response.scores)) throw new Error('Ungültige Referenzbewertung.')
+    const ids = identifiers(response.scores, 'dimension_id')
+    if (canonicalJson([...ids].sort()) !== canonicalJson(Object.keys(draft.referenceAnswers).sort())) throw new Error('Referenzdimensionen stimmen nicht mit dem Paket überein.')
+    exact(response, ['scores'])
+    draft.referenceAnswers = Object.fromEntries(response.scores.map(value => {
+      const entry = exact(value, ['dimension_id', 'score', 'rationale', 'evidence_segment_ids'])
+      return [String(entry.dimension_id), { score: entry.score as number | null, rationale: entry.rationale as string, evidence_segment_ids: entry.evidence_segment_ids as string[] }]
+    }))
+    return validateDraft(packet, draft)
+  }
   if (packet.task === 'feedback_implied_score') {
     if (!Array.isArray(response.scores)) throw new Error('Ungültige ältere Bewertung.')
     const ids = identifiers(response.scores, 'dimension_id')

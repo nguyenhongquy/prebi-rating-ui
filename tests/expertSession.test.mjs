@@ -19,8 +19,9 @@ try {
   rmSync(directory, { recursive: true, force: true })
 }
 const { bundleHash, validateSession, validateDraft, validatePackets, assertSourcesMatch, draftFromResponse, checkPacketHashes, sessionKey, expertCaseState, legacyDraft } = helpers
-const { emptyDraft, caseState, responseForDraft } = validation
+const { emptyDraft, caseState, responseForDraft, answerError } = validation
 const packets = validatePackets(JSON.parse(readFileSync(new URL('../public/examples/synthetic-evaluation-bundle.json', import.meta.url), 'utf8')).packets)
+const reference = packets.find(packet => packet.task === 'reflection_reference_score')
 const implied = packets.find(packet => packet.task === 'feedback_implied_score')
 const quality = packets.find(packet => packet.task === 'feedback_quality')
 const fresh = async () => ({ kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: 'EXPERT', bundle_sha256: await bundleHash(packets), packets, drafts: Object.fromEntries(packets.map(packet => [packet.packet_id, emptyDraft(packet)])), active_task: packets[0].task, active_index: 0, active_criterion: 0 })
@@ -28,12 +29,75 @@ const fresh = async () => ({ kind: 'prebi_expert_session', schema_version: '1.0.
 test('partial session round-trips unanswered dimensions, nulls, identity and order', async () => {
   const session = await fresh()
   session.drafts[quality.packet_id].overallComment = 'Partial comment'
+  session.drafts[reference.packet_id].referenceAnswers.SW.rationale = 'Vorläufige Begründung.'
+  session.drafts[reference.packet_id].referenceAnswers.SW.evidence_segment_ids = [reference.reflection.segments[1].segment_id]
+  session.active_task = 'reflection_reference_score'
+  session.active_criterion = 2
   const restored = await validateSession(JSON.parse(JSON.stringify(session)))
   assert.deepEqual(restored, session)
   assert.equal(restored.drafts[implied.packet_id].scoreAnswers.SW.status, 'unanswered')
   assert.equal(restored.drafts[implied.packet_id].scoreAnswers.SW.score, null)
   assert.equal(caseState(quality, restored.drafts[quality.packet_id]), 'in_progress')
+  assert.equal(restored.drafts[reference.packet_id].referenceAnswers.SW.score, null)
+  assert.equal(caseState(reference, restored.drafts[reference.packet_id]), 'in_progress')
+  assert.equal(restored.active_task, 'reflection_reference_score')
+  assert.equal(restored.active_criterion, 2)
   assert.equal(sessionKey(session), `expert::EXPERT::${session.bundle_sha256}`)
+})
+
+test('reference packets accept annotations but reject dangling, unknown, or output-bearing sources', () => {
+  assert.equal(reference.segment_annotations.length, 4)
+  assert.throws(() => validatePackets([{ ...reference, segment_annotations: [{ ...reference.segment_annotations[0], segment_id: 'missing' }] }]), /unbekannte Reflexion/)
+  assert.throws(() => validatePackets([{ ...reference, segment_annotations: [{ ...reference.segment_annotations[0], dimension_id: 'OTHER' }] }]), /unbekannte Reflexion oder Dimension/)
+  for (const field of ['output', 'human_feedback', 'generated_assessment', 'generated_feedback', 'historical_feedback', 'llm_judge_ratings']) {
+    assert.throws(() => validatePackets([{ ...reference, [field]: {} }]), /Ungültige Felder/)
+  }
+  const nestedOutput = structuredClone(reference)
+  nestedOutput.reflection.segments[0].generated_assessment = 'forbidden'
+  assert.throws(() => validatePackets([nestedOutput]), /Ungültige Felder/)
+  const nestedFeedback = structuredClone(reference)
+  nestedFeedback.rubric.dimensions[0].historical_feedback = 'forbidden'
+  assert.throws(() => validatePackets([nestedFeedback]), /Ungültige Felder/)
+  assert.throws(() => validatePackets([{ ...reference, score_dimensions: [{ dimension_id: 'OTHER', label: 'Other' }, ...reference.score_dimensions.slice(1)] }]), /Bewertungsdimension fehlt/)
+  const invalidBands = structuredClone(reference)
+  invalidBands.rubric.dimensions[0].bands = { '0.5': 'Ungültig' }
+  assert.throws(() => validatePackets([invalidBands]), /numerische Punktwertanker/)
+})
+
+test('reference drafts distinguish unanswered from score zero and validate rubric and evidence IDs', async () => {
+  const draft = emptyDraft(reference)
+  assert.equal(draft.referenceAnswers.SW.score, null)
+  assert.equal(caseState(reference, draft), 'not_started')
+  assert.match(answerError(reference, draft, 0), /Punktwert/)
+  draft.referenceAnswers.SW.score = 0
+  assert.equal(answerError(reference, draft, 0), null)
+  assert.equal(caseState(reference, draft), 'in_progress')
+  draft.referenceAnswers.SW.evidence_segment_ids = [reference.reflection.segments[0].segment_id]
+  assert.deepEqual(validateDraft(reference, draft), draft)
+  assert.throws(() => validateDraft(reference, { ...draft, referenceAnswers: { ...draft.referenceAnswers, SW: { ...draft.referenceAnswers.SW, score: 4 } } }), /Bewertungsraster/)
+  assert.throws(() => validateDraft(reference, { ...draft, referenceAnswers: { ...draft.referenceAnswers, SW: { ...draft.referenceAnswers.SW, evidence_segment_ids: ['missing'] } } }), /Reflexionsbelege/)
+})
+
+test('reference responses export and restore independently from feedback-implied scores', () => {
+  const draft = emptyDraft(reference)
+  for (const [index, dimension] of reference.score_dimensions.entries()) {
+    draft.referenceAnswers[dimension.dimension_id] = { score: index, rationale: index === 1 ? 'Synthetische Begründung.' : '', evidence_segment_ids: index === 0 ? [reference.reflection.segments[0].segment_id] : [] }
+  }
+  const response = responseForDraft(reference, draft)
+  assert.deepEqual(Object.keys(response), ['scores'])
+  assert.deepEqual(response.scores[0], { dimension_id: 'SW', score: 0, rationale: '', evidence_segment_ids: [reference.reflection.segments[0].segment_id] })
+  assert.deepEqual(draftFromResponse(reference, response).referenceAnswers, draft.referenceAnswers)
+  assert.throws(() => draftFromResponse(reference, { scores: [{ dimension_id: 'SW', status: 'inferred_from_feedback' }] }), /Referenzdimensionen/)
+})
+
+test('legacy drafts without referenceAnswers restore with an empty task-specific map', async () => {
+  const session = await fresh()
+  const oldDraft = structuredClone(session.drafts[quality.packet_id])
+  delete oldDraft.referenceAnswers
+  session.drafts[quality.packet_id] = oldDraft
+  const restored = await validateSession(session)
+  assert.deepEqual(restored.drafts[quality.packet_id].referenceAnswers, {})
+  assert.deepEqual(restored.drafts[quality.packet_id].criterionRatings, oldDraft.criterionRatings)
 })
 
 test('bundle hash is independent of packet and object-key order, but source-sensitive', async () => {

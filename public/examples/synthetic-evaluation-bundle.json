@@ -4,6 +4,41 @@
   "description": "Vollständig erfundene Beispiele für UI-Tests. Keine Forschungsdaten und kein Ersatz für die Forschungsprotokolle.",
   "packets": [
     {
+      "packet_id": "synthetic-reference-001",
+      "task": "reflection_reference_score",
+      "packet_version": "1.0.0",
+      "protocol_id": "synthetic-reflection-reference",
+      "protocol_version": "1.0.0",
+      "human_protocol": "Synthetischer UI-Test: Bewerten Sie die erfundene Reflexion für jede Dimension ganzheitlich anhand des bereitgestellten Rasters. Die Segmentannotationen sind Kontext und ersetzen kein eigenständiges Urteil. Begründung und Belegsegmente sind optional. Dieses Testprotokoll ersetzt kein Forschungsprotokoll.",
+      "condition_blinded": true,
+      "reflection": {
+        "segments": [
+          { "segment_id": "synthetic-reference-segment-1", "order": 0, "text": "In einer erfundenen Mathematikstunde sollten die Kinder in Dreiergruppen verschiedene Wege zum Vergleichen von Brüchen finden. Während der Arbeitsphase hörte ich, wie zwei Kinder unterschiedliche Ergebnisse festhielten." },
+          { "segment_id": "synthetic-reference-segment-2", "order": 1, "text": "Ich bat die Gruppe, ihre Zeichnungen nebeneinanderzulegen. Danach bemerkte ein Kind, dass es gleich große Teile unterschiedlich gezählt hatte. Vielleicht half der direkte Vergleich; ich hatte aber nicht beobachtet, wie die Gruppe vorher gerechnet hatte." },
+          { "segment_id": "synthetic-reference-segment-3", "order": 2, "text": "Rückblickend hätte ich die ersten Lösungswege früher sichern können. Bei einer ähnlichen Aufgabe möchte ich zunächst jede Person ihre Darstellung erklären lassen und anschließend Gemeinsamkeiten und Unterschiede sammeln." }
+        ]
+      },
+      "segment_annotations": [
+        { "segment_id": "synthetic-reference-segment-1", "dimension_id": "SW", "skill_label": "Situationsauswahl", "level": "2" },
+        { "segment_id": "synthetic-reference-segment-2", "dimension_id": "SW", "skill_label": "Situationsrekonstruktion", "level": "2" },
+        { "segment_id": "synthetic-reference-segment-2", "dimension_id": "UA", "skill_label": "Ursachenbezug", "level": "1" },
+        { "segment_id": "synthetic-reference-segment-3", "dimension_id": "HA", "skill_label": "Zukunftsplanung", "level": "2" }
+      ],
+      "rubric": {
+        "version": "1.0.0",
+        "dimensions": [
+          { "dimension_id": "SW", "name": "Situationswahrnehmung", "description": "Auswahl, Rekonstruktion und Charakterisierung einer bedeutsamen und/oder reflexionsrelevanten Unterrichtssituation.", "bands": { "0": "Keine bedeutsame und/oder reflexionsrelevante Situation wird ausgewählt, beschrieben oder rekonstruiert.", "1": "Eine Situation wird benannt, aber keine bedeutsame und/oder reflexionsrelevante Situation wird beschrieben.", "2": "Wählt eine bedeutsame und/oder reflexionsrelevante Situation aus und beschreibt bzw. rekonstruiert sie nachvollziehbar.", "3": "Stellt die Situation präzise, kontextualisiert und differenziert dar; beurteilt ihre Bedeutung oder charakterisiert sie unter Einbezug von Core Reflections." } },
+          { "dimension_id": "UA", "name": "Ursachenanalyse", "description": "Interpretation und Erklärung von Ursachen, Zusammenhängen oder zugrunde liegenden Strukturen unter Berücksichtigung der Reflexionsacht.", "bands": { "0": "Keine Ursachen oder Zusammenhänge werden erklärt oder interpretiert.", "1": "Eine Ursache oder ein Zusammenhang wird benannt bzw. behauptet, aber nicht erklärt.", "2": "Formuliert eine grundsätzlich zielführende Analyse von Ursachen oder Zusammenhängen, begründet oder stützt diese jedoch nicht weiter.", "3": "Erklärt Ursachen oder Zusammenhänge kohärent und stützt die erklärende Beziehung durch Professionswissen, weitere Beobachtungen, Literatur oder Perspektivwechsel." } },
+          { "dimension_id": "HA", "name": "Handlungsalternativen", "description": "Ableitung und Begründung zukunftsorientierter Handlungsoptionen unter Berücksichtigung der Reflexionsacht.", "bands": { "0": "Keine Konsequenz wird formuliert.", "1": "Nennt eine vage, naive bzw. unplausible Handlungsalternative ohne Begründung und/oder Konsequenz.", "2": "Erkennt Veränderungsbedarf oder nennt eine plausible, zielführende Handlungsalternative beziehungsweise Schlussfolgerung für zukünftige Situationen mit Begründung.", "3": "Leitet eine Handlungsalternative nachvollziehbar aus der vorausgehenden Analyse ab und verknüpft sie mit relevanten Beobachtungen, erklärten Ursachen oder Professionswissen." } }
+        ]
+      },
+      "score_dimensions": [
+        { "dimension_id": "SW", "label": "Situationswahrnehmung" },
+        { "dimension_id": "UA", "label": "Ursachenanalyse" },
+        { "dimension_id": "HA", "label": "Handlungsalternativen" }
+      ]
+    },
+    {
       "packet_id": "synthetic-assessment-001",
       "task": "assessment_quality",
       "packet_version": "1.0.0",

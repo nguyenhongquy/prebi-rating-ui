@@ -12,7 +12,7 @@ export default function RatingProgress({ packet, draft, activeIndex, onNavigate 
   const steps = evaluationSteps(packet)
   const complete = steps.filter((_, index) => !answerError(packet, draft, index)).length
   return <div className="rating-stepper">
-    <p className="draft-progress">{complete} / {steps.length} Kriterien vollständig bewertet</p>
+    <p className="draft-progress">{complete} / {steps.length} {packet.task === 'reflection_reference_score' ? 'Dimensionen' : 'Kriterien'} vollständig bewertet</p>
     <nav aria-label="Bewertungskriterien"><ol>
       {steps.map((step, index) => {
         const answered = !answerError(packet, draft, index)

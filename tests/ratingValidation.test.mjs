@@ -103,7 +103,7 @@ const syntheticBundle = JSON.parse(readFileSync(new URL('../public/examples/synt
 
 test('public synthetic evaluation bundle covers all tasks with valid source references', () => {
   assert.equal(syntheticBundle.synthetic, true)
-  assert.deepEqual(syntheticBundle.packets.map(item => item.task).sort(), ['assessment_quality', 'feedback_implied_score', 'feedback_quality'])
+  assert.deepEqual(syntheticBundle.packets.map(item => item.task).sort(), ['assessment_quality', 'feedback_implied_score', 'feedback_quality', 'reflection_reference_score'])
   assert.equal(new Set(syntheticBundle.packets.map(item => item.packet_id)).size, syntheticBundle.packets.length)
   for (const item of syntheticBundle.packets) {
     assert.ok(item.packet_id.startsWith('synthetic-'))
@@ -121,7 +121,13 @@ test('public synthetic evaluation bundle covers all tasks with valid source refe
       assert.ok(output.evidence_segment_ids.length)
       assert.ok(output.evidence_segment_ids.every(id => ids.has(id)))
     }
-    if (item.task === 'feedback_implied_score') {
+    if (item.task === 'reflection_reference_score') {
+      assert.deepEqual(item.score_dimensions.map(dimension => dimension.dimension_id), ['SW', 'UA', 'HA'])
+      assert.ok(item.segment_annotations.some(annotation => annotation.segment_id === 'synthetic-reference-segment-2' && annotation.dimension_id === 'SW'))
+      assert.ok(item.segment_annotations.some(annotation => annotation.segment_id === 'synthetic-reference-segment-2' && annotation.dimension_id === 'UA'))
+      assert.equal(Object.hasOwn(item, 'output'), false)
+      assert.equal(Object.hasOwn(item, 'human_feedback'), false)
+    } else if (item.task === 'feedback_implied_score') {
       assert.ok(item.human_feedback.trim())
       assert.deepEqual(item.score_dimensions.map(dimension => dimension.dimension_id), ['SW', 'UA', 'HA'])
     } else {
@@ -141,12 +147,18 @@ test('public synthetic evaluation bundle covers all tasks with valid source refe
 
 test('synthetic evaluation packets support complete valid responses', () => {
   for (const item of syntheticBundle.packets) {
-    const completeDraft = {
-      criterionRatings: Object.fromEntries((item.criteria ?? []).map(criterion => [criterion.criterion_id, { score: 2, unable_to_judge: false, comment: '' }])),
-      scoreAnswers: Object.fromEntries((item.score_dimensions ?? []).map(dimension => [dimension.dimension_id, { status: 'not_inferable', score: null, confidence: 'not_inferable', rationale: 'Synthetische Testantwort.', feedback_evidence: [] }])),
-      overallComment: '', spanComments: [],
-    }
+    const completeDraft = emptyDraft(item)
+    for (const criterion of item.criteria ?? []) completeDraft.criterionRatings[criterion.criterion_id].score = 2
+    for (const answer of Object.values(completeDraft.scoreAnswers)) Object.assign(answer, { status: 'not_inferable', rationale: 'Synthetische Testantwort.' })
+    for (const answer of Object.values(completeDraft.referenceAnswers)) answer.score = 0
     for (const [index] of evaluationSteps(item).entries()) assert.equal(answerError(item, completeDraft, index), null)
     assert.equal(submissionState(item, completeDraft, responseForDraft(item, completeDraft)), 'submitted')
+    if (item.task === 'reflection_reference_score') assert.ok(responseForDraft(item, completeDraft).scores.every(answer => answer.score === 0 && !Object.hasOwn(answer, 'confidence')))
   }
+})
+
+test('reference scoring omits the generated-output viewer', () => {
+  const source = readFileSync(new URL('../src/SourceComparison.tsx', import.meta.url), 'utf8')
+  assert.match(source, /const reflectionOnly = packet\.task === 'reflection_reference_score'/)
+  assert.match(source, /!reflectionOnly && <OutputViewer/)
 })
