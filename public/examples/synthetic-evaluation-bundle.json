@@ -19,10 +19,10 @@
         ]
       },
       "segment_annotations": [
-        { "segment_id": "synthetic-reference-segment-1", "dimension_id": "SW", "skill_label": "Situationsauswahl", "level": "2" },
-        { "segment_id": "synthetic-reference-segment-2", "dimension_id": "SW", "skill_label": "Situationsrekonstruktion", "level": "2" },
-        { "segment_id": "synthetic-reference-segment-2", "dimension_id": "UA", "skill_label": "Ursachenbezug", "level": "1" },
-        { "segment_id": "synthetic-reference-segment-3", "dimension_id": "HA", "skill_label": "Zukunftsplanung", "level": "2" }
+        { "segment_id": "synthetic-reference-segment-1", "dimension_id": "SW", "level": "2" },
+        { "segment_id": "synthetic-reference-segment-2", "dimension_id": "SW", "level": "2" },
+        { "segment_id": "synthetic-reference-segment-2", "dimension_id": "UA", "level": "1" },
+        { "segment_id": "synthetic-reference-segment-3", "dimension_id": "HA", "level": "2" }
       ],
       "rubric": {
         "version": "1.0.0",
