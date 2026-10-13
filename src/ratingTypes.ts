@@ -9,9 +9,79 @@ export type ConsensusRecord = {
   finalized_by: string | null
   finalization_history: ConsensusHistoryEntry[]
 }
+export type AssessmentReferenceSnapshot = {
+  packet_id: string
+  finalized_at: string
+  scores: Record<string, number>
+}
+export type AssessmentReferenceRecord = {
+  used_snapshot: AssessmentReferenceSnapshot | null
+  reviewed_snapshot: AssessmentReferenceSnapshot | null
+  reviewed_at: string | null
+}
+export type C1Snapshot = {
+  snapshot_id: string
+  packet_id: string
+  protocol_id: string
+  protocol_version: string
+  packet_version: string
+  panel_id: string
+  finalized_at: string
+  consensus_note: string
+  finalization_history: ConsensusHistoryEntry[]
+  criterion_ratings: Record<string, CriterionAnswer>
+  overall_comment: string
+  span_comments: SpanComment[]
+}
+export type FeedbackComparisonHistoryEntry = {
+  c1_snapshot_id: string
+  historical_feedback_revealed_at: string | null
+  decision: 'keep' | 'revised'
+  revised_criterion_ratings: Record<string, number | null>
+  revision_reasons: Record<string, string>
+  finalized_at: string
+  reopened_at: string
+}
+export type FeedbackComparisonCase = {
+  status: 'in_progress' | 'finalized'
+  c1_snapshot_id: string
+  historical_feedback_revealed_at: string | null
+  decision: 'keep' | 'revised' | null
+  revised_criterion_ratings: Record<string, number | null>
+  revision_reasons: Record<string, string>
+  finalized_at: string | null
+  history: FeedbackComparisonHistoryEntry[]
+}
+export type FeedbackComparisonState = {
+  stage: 'c1' | 'c2'
+  historical_feedback_revealed_at: string | null
+  cases: Record<string, FeedbackComparisonCase>
+}
 export type Criterion = { criterion_id: string; label: string; description: string; anchors?: Record<string, string> }
 export type Segment = { segment_id: string; order: number; text: string }
-export type SegmentAnnotation = { segment_id: string; dimension_id: string; skill_label?: string; level?: string }
+export type SegmentAnnotation = {
+  segment_id: string
+  dimension_id: string
+  skill_label?: string
+  level?: string
+  candidate_id?: string
+  scope?: 'in_scope' | 'out_of_scope' | 'unknown'
+  scope_known?: boolean
+  known?: boolean
+  requires_review?: boolean
+}
+export type SegmentAnnotationSummaryDimension = {
+  dimension_id: string
+  known_band_count: number
+  positive_band_count: number
+  band_counts: Record<'0' | '1' | '2' | '3', number>
+  band_percentages: Record<'1' | '2' | '3', number>
+  mean_positive_band: number | null
+}
+export type SegmentAnnotationSummary = {
+  aggregation_unit: 'candidate_annotation'
+  dimensions: SegmentAnnotationSummaryDimension[]
+}
 export type FeedbackItem = { text: string; evidence_segment_ids?: string[] }
 export type EvidenceSpan = { start_character: number; end_character: number; quote: string }
 export type CriterionAnswer = { score: number | null; unable_to_judge: boolean; comment: string }
@@ -41,6 +111,7 @@ export type Draft = {
 }
 export type Packet = {
   packet_id: string
+  reflection_id?: string
   task: RatingTask
   packet_version: string
   protocol_id: string
@@ -50,6 +121,7 @@ export type Packet = {
   scale?: { min: number; max: number; step?: number; id?: string; anchors: Record<string, string> }
   score_dimensions?: Array<{ dimension_id: string; label: string }>
   segment_annotations?: SegmentAnnotation[]
+  segment_annotation_summary?: SegmentAnnotationSummary
   reflection: { segments: Segment[] }
   rubric: { version: string; dimensions: Array<{ dimension_id: string; name: string; description: string; bands: Record<string, string> }> }
   output?: {

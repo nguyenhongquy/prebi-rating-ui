@@ -1,9 +1,28 @@
-import type { Draft, Packet } from './ratingTypes'
+import type { Draft, Packet, Segment, SegmentAnnotation } from './ratingTypes'
 
 export type PacketState = 'not_started' | 'draft' | 'changed' | 'submitted'
 export type CaseState = 'not_started' | 'in_progress' | 'complete'
 
 export const REFERENCE_SCORE_SCALE = { id: 'reflection-reference-0-3-step-0.5-v1', min: 0, max: 3, step: 0.5 } as const
+
+export function segmentDisplayNumbers(segments: Segment[]): Map<string, number> {
+  const firstOrder = segments.length ? Math.min(...segments.map(segment => segment.order)) : 0
+  const offset = firstOrder === 0 ? 1 : 0
+  return new Map(segments.map(segment => [segment.segment_id, segment.order + offset]))
+}
+
+export function visibleModellingBands(
+  annotations: SegmentAnnotation[],
+  dimensionLabels: Record<string, string>,
+): Array<{ dimension_id: string; label: string; band: string }> {
+  const byDimension = new Map(annotations.map(annotation => [annotation.dimension_id, annotation]))
+  return (['SW', 'UA', 'HA'] as const).flatMap(dimensionId => {
+    const annotation = byDimension.get(dimensionId)
+    const band = annotation?.level?.trim() ?? ''
+    if (!annotation || annotation.known === false || !/^[1-3]$/.test(band)) return []
+    return [{ dimension_id: dimensionId, label: dimensionLabels[dimensionId] ?? dimensionId, band }]
+  })
+}
 
 export function isValidReferenceScore(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= REFERENCE_SCORE_SCALE.min

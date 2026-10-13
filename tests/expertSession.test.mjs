@@ -18,12 +18,13 @@ try {
 } finally {
   rmSync(directory, { recursive: true, force: true })
 }
-const { bundleHash, validateSession, validateDraft, validatePackets, assertSourcesMatch, draftFromResponse, checkPacketHashes, sessionKey, expertCaseState, legacyDraft, emptyConsensus, consensusCaseState, consensusAnswerErrors, finalizeConsensus, flagConsensus, resumeConsensus, reopenConsensus, researchExportPackets, consensusResearchExport, filteredConsensusIndexes, assertConsensusBlinding } = helpers
+const { bundleHash, validateSession, validateDraft, validatePackets, assertSourcesMatch, draftFromResponse, checkPacketHashes, sessionKey, expertCaseState, legacyDraft, emptyConsensus, emptyAssessmentReferences, captureAssessmentReference, finalizedAssessmentReference, assessmentReferenceState, emptyC1Snapshots, emptyFeedbackComparison, captureC1Snapshot, latestC1Snapshot, feedbackC1GateReady, historicalFeedbackVisible, enterFeedbackComparison, ensureFeedbackComparisonCase, feedbackComparisonErrors, finalizeFeedbackComparison, reopenFeedbackComparison, consensusCaseState, consensusAnswerErrors, finalizeConsensus, flagConsensus, resumeConsensus, reopenConsensus, researchExportPackets, consensusResearchExport, filteredConsensusIndexes, assertConsensusBlinding } = helpers
 const { emptyDraft, caseState, responseForDraft, answerError, REFERENCE_SCORE_SCALE } = validation
 const packets = validatePackets(JSON.parse(readFileSync(new URL('../public/examples/synthetic-evaluation-bundle.json', import.meta.url), 'utf8')).packets)
 const reference = packets.find(packet => packet.task === 'reflection_reference_score')
 const implied = packets.find(packet => packet.task === 'feedback_implied_score')
 const quality = packets.find(packet => packet.task === 'feedback_quality')
+const assessment = packets.find(packet => packet.task === 'assessment_quality')
 const fresh = async () => ({ kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: 'EXPERT', bundle_sha256: await bundleHash(packets), packets, drafts: Object.fromEntries(packets.map(packet => [packet.packet_id, emptyDraft(packet)])), active_task: packets[0].task, active_index: 0, active_criterion: 0 })
 const freshConsensus = async () => {
   const session = await fresh()
@@ -79,11 +80,222 @@ test('reference packets accept annotations but reject dangling, unknown, or outp
   assert.throws(() => validatePackets([invalidBands]), /numerische Punktwertanker/)
 })
 
+test('Task A accepts separate modelling candidates with scope, knownness, and review flags', () => {
+  const candidatePacket = {
+    ...reference,
+    segment_annotations: [
+      { segment_id: reference.reflection.segments[0].segment_id, dimension_id: 'SW', skill_label: 'SW', level: '2', candidate_id: 'candidate-a', scope: 'in_scope', scope_known: true, known: true, requires_review: false },
+      { segment_id: reference.reflection.segments[0].segment_id, dimension_id: 'UA', skill_label: 'UA', level: '', candidate_id: 'candidate-a', scope: 'in_scope', scope_known: true, known: false, requires_review: false },
+      { segment_id: reference.reflection.segments[0].segment_id, dimension_id: 'SW', skill_label: 'SW', level: 'N', candidate_id: 'candidate-b', scope: 'out_of_scope', scope_known: true, known: false, requires_review: true },
+    ],
+  }
+  const validated = validatePackets([candidatePacket])[0]
+  assert.equal(validated.segment_annotations.length, 3)
+  assert.deepEqual(new Set(validated.segment_annotations.map(annotation => annotation.candidate_id)), new Set(['candidate-a', 'candidate-b']))
+  assert.throws(() => validatePackets([{ ...candidatePacket, segment_annotations: [{ ...candidatePacket.segment_annotations[0], known: 'false' }] }]), /Segmentreferenzstatus/)
+})
+
+test('Task A band summary validates per-dimension counts, hidden-band denominator, and positive mean', () => {
+  const summary = {
+    aggregation_unit: 'candidate_annotation',
+    dimensions: reference.score_dimensions.map(dimension => ({
+      dimension_id: dimension.dimension_id,
+      known_band_count: 2,
+      positive_band_count: 1,
+      band_counts: { '0': 1, '1': 0, '2': 1, '3': 0 },
+      band_percentages: { '1': 0, '2': 100, '3': 0 },
+      mean_positive_band: 2,
+    })),
+  }
+  const packet = validatePackets([{ ...reference, segment_annotation_summary: summary }])[0]
+  assert.equal(packet.segment_annotation_summary.dimensions[0].mean_positive_band, 2)
+  assert.throws(() => validatePackets([{ ...reference, segment_annotation_summary: {
+    ...summary,
+    dimensions: summary.dimensions.map((dimension, index) => index === 0
+      ? { ...dimension, band_percentages: { ...dimension.band_percentages, '2': 50 } }
+      : dimension),
+  } }]), /Bandprozente/)
+})
+
+test('historical feedback is optional only on Task C and rejected on Task B', () => {
+  const withHistoricalFeedback = validatePackets([{ ...quality, human_feedback: 'Lecturer feedback, unstructured.' }])[0]
+  assert.equal(withHistoricalFeedback.human_feedback, 'Lecturer feedback, unstructured.')
+  assert.equal(validatePackets([quality])[0].human_feedback, undefined)
+  assert.throws(() => validatePackets([{ ...assessment, human_feedback: 'Must not appear in Task B.' }]), /Historisches Feedback ist in Task B nicht zulässig/)
+  assert.throws(() => validatePackets([{ ...reference, human_feedback: 'Must not appear in Task A.' }]), /Ungültige Felder/)
+})
+
 test('legacy integer anchor metadata stays compatible while incompatible declared scales fail', () => {
   const legacyScale = { min: 0, max: 3, anchors: { '0': 'Null', '1': 'Eins', '2': 'Zwei', '3': 'Drei' } }
   assert.equal(validatePackets([{ ...reference, scale: legacyScale }])[0].scale.step, undefined)
   assert.throws(() => validatePackets([{ ...reference, scale: { ...legacyScale, step: 1 } }]), /inkompatible Punktwertskala/)
   assert.throws(() => validatePackets([{ ...reference, scale: { ...legacyScale, id: 'integer-only-v1' } }]), /inkompatible Punktwertskala/)
+})
+
+test('optional reflection IDs link only identical reflection and rubric sources', () => {
+  const linked = validatePackets([
+    { ...reference, reflection_id: 'reflection-opaque-001' },
+    { ...assessment, reflection: structuredClone(reference.reflection), rubric: { ...assessment.rubric, version: reference.rubric.version }, reflection_id: 'reflection-opaque-001' },
+  ])
+  assert.deepEqual(linked.map(packet => packet.reflection_id), ['reflection-opaque-001', 'reflection-opaque-001'])
+  assert.equal(validatePackets([reference])[0].reflection_id, undefined)
+  assert.throws(() => validatePackets([
+    { ...reference, reflection_id: 'reflection-opaque-002' },
+    { ...assessment, reflection_id: 'reflection-opaque-002', reflection: { segments: [...assessment.reflection.segments, { segment_id: 'extra', order: 999, text: 'Different source.' }] }, displayed_reflection_sha256: undefined },
+  ]), /identische Reflexionsinhalte/)
+  assert.throws(() => validatePackets([
+    { ...reference, reflection_id: 'reflection-opaque-003' },
+    { ...assessment, reflection_id: 'reflection-opaque-003', rubric: { ...assessment.rubric, version: 'different-version' } },
+  ]), /kompatible Rubrikversionen/)
+})
+
+test('Task B resolves only a unique finalized linked reference and preserves its snapshot', async () => {
+  const linkedPackets = validatePackets([
+    { ...reference, packet_id: 'linked-reference', reflection_id: 'reflection-opaque-004' },
+    { ...assessment, packet_id: 'linked-assessment', reflection: structuredClone(reference.reflection), rubric: { ...assessment.rubric, version: reference.rubric.version }, reflection_id: 'reflection-opaque-004' },
+  ])
+  const linkedReference = linkedPackets[0]
+  const linkedAssessment = linkedPackets[1]
+  const session = {
+    kind: 'prebi_expert_session', schema_version: '1.2.0', evaluator_id: 'linked-panel',
+    evaluation_mode: 'expert_consensus', panel_id: 'linked-panel', bundle_sha256: await bundleHash(linkedPackets),
+    packets: linkedPackets,
+    drafts: Object.fromEntries(linkedPackets.map(packet => [packet.packet_id, emptyDraft(packet)])),
+    pending_editors: {}, consensus: emptyConsensus(linkedPackets),
+    assessment_reference_snapshots: emptyAssessmentReferences(linkedPackets),
+    active_task: 'reflection_reference_score', active_index: 0, active_criterion: 0,
+  }
+  assert.equal(finalizedAssessmentReference(linkedAssessment, session), null)
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'unavailable')
+  for (const [index, dimension] of linkedReference.score_dimensions.entries()) {
+    session.drafts[linkedReference.packet_id].referenceAnswers[dimension.dimension_id].score = index + 0.5
+  }
+  session.consensus[linkedReference.packet_id] = finalizeConsensus(
+    session.consensus[linkedReference.packet_id], linkedReference,
+    session.drafts[linkedReference.packet_id], session.panel_id, '2026-10-13T10:00:00Z',
+  )
+  const resolved = finalizedAssessmentReference(linkedAssessment, session)
+  assert.deepEqual(resolved.scores, { SW: 0.5, UA: 1.5, HA: 2.5 })
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'available')
+  for (const criterion of linkedAssessment.criteria) session.drafts[linkedAssessment.packet_id].criterionRatings[criterion.criterion_id].score = linkedAssessment.scale.min
+  session.assessment_reference_snapshots[linkedAssessment.packet_id] = captureAssessmentReference(linkedAssessment, session)
+  session.consensus[linkedAssessment.packet_id] = finalizeConsensus(
+    session.consensus[linkedAssessment.packet_id], linkedAssessment,
+    session.drafts[linkedAssessment.packet_id], session.panel_id, '2026-10-13T10:10:00Z',
+  )
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'current')
+  const exported = consensusResearchExport(session, () => 'linked-rating')
+  assert.equal(exported.schema_version, '1.2.0')
+  const exportedAssessment = exported.ratings.find(rating => rating.packet_id === linkedAssessment.packet_id)
+  assert.equal(exportedAssessment.assessment_reference.used_snapshot.packet_id, linkedReference.packet_id)
+  assert.deepEqual(exportedAssessment.assessment_reference.used_snapshot.scores, resolved.scores)
+  const restored = await validateSession(JSON.parse(JSON.stringify(session)))
+  assert.deepEqual(restored.assessment_reference_snapshots, session.assessment_reference_snapshots)
+  assert.deepEqual(restored.c1_snapshots, {})
+  assert.deepEqual(restored.feedback_comparison, emptyFeedbackComparison())
+
+  session.consensus[linkedReference.packet_id] = reopenConsensus(session.consensus[linkedReference.packet_id])
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'changed')
+  assert.equal(assessmentReferenceState(linkedAssessment, session).current, null)
+  for (const dimension of linkedReference.score_dimensions) session.drafts[linkedReference.packet_id].referenceAnswers[dimension.dimension_id].score = 3
+  session.consensus[linkedReference.packet_id] = finalizeConsensus(
+    session.consensus[linkedReference.packet_id], linkedReference,
+    session.drafts[linkedReference.packet_id], session.panel_id, '2026-10-13T11:00:00Z',
+  )
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'changed')
+  assert.deepEqual(captureAssessmentReference(linkedAssessment, session).used_snapshot.scores, resolved.scores)
+  const changedReference = finalizedAssessmentReference(linkedAssessment, session)
+  session.assessment_reference_snapshots[linkedAssessment.packet_id] = {
+    ...session.assessment_reference_snapshots[linkedAssessment.packet_id],
+    reviewed_snapshot: changedReference,
+    reviewed_at: '2026-10-13T11:05:00Z',
+  }
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'reviewed')
+  const reviewedExport = consensusResearchExport(session, () => 'reviewed-rating')
+  const reviewedAssessment = reviewedExport.ratings.find(rating => rating.packet_id === linkedAssessment.packet_id)
+  assert.deepEqual(reviewedAssessment.assessment_reference.used_snapshot.scores, resolved.scores)
+  assert.deepEqual(reviewedAssessment.assessment_reference.reviewed_snapshot.scores, changedReference.scores)
+
+  const duplicateReference = { ...linkedReference, packet_id: 'second-linked-reference' }
+  const ambiguous = { ...session, packets: [...linkedPackets, duplicateReference] }
+  assert.equal(finalizedAssessmentReference(linkedAssessment, ambiguous), null)
+})
+
+test('C2 remains locked until every feedback C1 snapshot is finalized and persists keep/revise decisions separately', async () => {
+  const feedbackPacket = validatePackets([{ ...quality, packet_id: 'c2-feedback', human_feedback: 'Historical lecturer text, unstructured.' }])[0]
+  const secondFeedbackPacket = { ...feedbackPacket, packet_id: 'c2-feedback-second' }
+  const feedbackPackets = [feedbackPacket, secondFeedbackPacket]
+  const session = {
+    kind: 'prebi_expert_session', schema_version: '1.2.0', evaluator_id: 'c2-panel',
+    evaluation_mode: 'expert_consensus', panel_id: 'c2-panel', bundle_sha256: await bundleHash(feedbackPackets),
+    packets: feedbackPackets, drafts: Object.fromEntries(feedbackPackets.map(packet => [packet.packet_id, emptyDraft(packet)])),
+    pending_editors: {}, consensus: emptyConsensus(feedbackPackets),
+    assessment_reference_snapshots: emptyAssessmentReferences(feedbackPackets),
+    c1_snapshots: emptyC1Snapshots(feedbackPackets), feedback_comparison: emptyFeedbackComparison(),
+    active_task: 'feedback_quality', active_index: 0, active_criterion: 0,
+  }
+  assert.equal(feedbackC1GateReady(session), false)
+  assert.equal(historicalFeedbackVisible(session), false)
+  assert.throws(() => enterFeedbackComparison(session, '2026-10-13T12:00:00Z'), /nach Abschluss aller C1/)
+
+  completeDraft(feedbackPacket, session.drafts[feedbackPacket.packet_id])
+  const c1Consensus = finalizeConsensus(session.consensus[feedbackPacket.packet_id], feedbackPacket, session.drafts[feedbackPacket.packet_id], session.panel_id, '2026-10-13T12:05:00Z')
+  session.consensus[feedbackPacket.packet_id] = c1Consensus
+  const c1 = captureC1Snapshot(feedbackPacket, session.drafts[feedbackPacket.packet_id], c1Consensus, session.panel_id, 'c1-snapshot-1')
+  session.c1_snapshots[feedbackPacket.packet_id].push(c1)
+  assert.equal(feedbackC1GateReady(session), false)
+  completeDraft(secondFeedbackPacket, session.drafts[secondFeedbackPacket.packet_id])
+  const secondConsensus = finalizeConsensus(session.consensus[secondFeedbackPacket.packet_id], secondFeedbackPacket, session.drafts[secondFeedbackPacket.packet_id], session.panel_id, '2026-10-13T12:07:00Z')
+  session.consensus[secondFeedbackPacket.packet_id] = secondConsensus
+  session.c1_snapshots[secondFeedbackPacket.packet_id].push(captureC1Snapshot(secondFeedbackPacket, session.drafts[secondFeedbackPacket.packet_id], secondConsensus, session.panel_id, 'c1-snapshot-2'))
+  assert.equal(feedbackC1GateReady(session), true)
+  assert.equal(historicalFeedbackVisible(session), false)
+  assert.deepEqual(latestC1Snapshot(feedbackPacket, session), c1)
+
+  session.feedback_comparison = enterFeedbackComparison(session, '2026-10-13T12:10:00Z')
+  session.feedback_comparison.cases[feedbackPacket.packet_id].historical_feedback_revealed_at = '2026-10-13T12:11:00Z'
+  assert.equal(historicalFeedbackVisible(session), true)
+  let c2 = session.feedback_comparison.cases[feedbackPacket.packet_id]
+  assert.ok(c2)
+  assert.deepEqual(feedbackComparisonErrors(feedbackPacket, c1, c2).length, 1)
+
+  const changedCriterionId = feedbackPacket.criteria[0].criterion_id
+  const changedScore = c1.criterion_ratings[changedCriterionId].score === 1 ? 2 : 1
+  c2 = { ...c2, decision: 'revised', revised_criterion_ratings: { ...c2.revised_criterion_ratings, [changedCriterionId]: changedScore } }
+  assert.match(feedbackComparisonErrors(feedbackPacket, c1, c2).join(' '), /mindestens fünf Zeichen/)
+  c2.revision_reasons[changedCriterionId] = 'Das historische Feedback enthält einen belegten Hinweis.'
+  assert.deepEqual(feedbackComparisonErrors(feedbackPacket, c1, c2), [])
+  const kept = finalizeFeedbackComparison(feedbackPacket, c1, { ...c2, decision: 'keep', revised_criterion_ratings: Object.fromEntries(Object.entries(c1.criterion_ratings).map(([id, answer]) => [id, answer.score])), revision_reasons: {} }, '2026-10-13T12:19:00Z')
+  assert.equal(kept.decision, 'keep')
+  c2 = finalizeFeedbackComparison(feedbackPacket, c1, c2, '2026-10-13T12:20:00Z')
+  session.feedback_comparison.cases[feedbackPacket.packet_id] = c2
+  const restored = await validateSession(JSON.parse(JSON.stringify(session)))
+  assert.deepEqual(restored.c1_snapshots[feedbackPacket.packet_id][0], c1)
+  assert.deepEqual(restored.feedback_comparison.cases[feedbackPacket.packet_id], c2)
+  assert.deepEqual(feedbackComparisonErrors(feedbackPacket, c1, c2), [])
+  const exported = consensusResearchExport(restored, () => 'c2-rating-id')
+  assert.equal(exported.schema_version, '1.2.0')
+  const feedbackExport = exported.ratings.find(rating => rating.packet_id === feedbackPacket.packet_id)
+  assert.deepEqual(feedbackExport.response.criterion_ratings, c1.criterion_ratings)
+  assert.equal(feedbackExport.c1_snapshot_id, c1.snapshot_id)
+  assert.equal(feedbackExport.feedback_comparison.historical_feedback_revealed, true)
+  assert.equal(feedbackExport.feedback_comparison.decision, 'revised')
+  assert.equal(feedbackExport.feedback_comparison.revised_criterion_ratings[changedCriterionId], changedScore)
+  assert.equal(feedbackExport.feedback_comparison.revision_reasons[changedCriterionId], c2.revision_reasons[changedCriterionId])
+
+  const reopened = reopenFeedbackComparison(c2, '2026-10-13T12:25:00Z')
+  assert.equal(reopened.status, 'in_progress')
+  assert.equal(reopened.history.length, 1)
+  assert.equal(reopened.history[0].decision, 'revised')
+  assert.equal(reopened.c1_snapshot_id, c1.snapshot_id)
+
+  session.consensus[feedbackPacket.packet_id] = reopenConsensus(session.consensus[feedbackPacket.packet_id])
+  session.feedback_comparison = { ...session.feedback_comparison, stage: 'c1' }
+  assert.equal(feedbackC1GateReady(session), false)
+  assert.equal(historicalFeedbackVisible(session), false)
+  const lockedAfterReload = await validateSession(JSON.parse(JSON.stringify(session)))
+  assert.equal(lockedAfterReload.feedback_comparison.stage, 'c1')
+  assert.equal(historicalFeedbackVisible(lockedAfterReload), false)
 })
 
 test('reference drafts distinguish unanswered from score zero and validate rubric and evidence IDs', async () => {

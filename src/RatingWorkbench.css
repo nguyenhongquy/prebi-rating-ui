@@ -51,6 +51,15 @@
 .rubric-dimension dl div { display: grid; grid-template-columns: 35px minmax(0, 1fr); gap: 8px; color: #657169; font-size: 9px; line-height: 1.45; }
 .rubric-dimension dt { font-weight: 800; }
 .rubric-dimension dd { margin: 0; }
+.modelling-band-summary { margin: 4px 0 16px; padding: 12px 0; border-top: 1px solid var(--rating-line); border-bottom: 1px solid var(--rating-line); }
+.modelling-band-summary h3 { margin: 0 0 8px; color: var(--ph-moss); font-size: 14px; }
+.modelling-band-summary-scroll { max-width: 100%; overflow-x: auto; }
+.modelling-band-summary table { width: 100%; min-width: 580px; border-collapse: collapse; color: #344139; font-size: 12px; text-align: left; }
+.modelling-band-summary th, .modelling-band-summary td { padding: 6px 8px; border-bottom: 1px solid #e1e7e1; white-space: nowrap; }
+.modelling-band-summary thead th { color: #536158; font-size: 11px; font-weight: 700; }
+.modelling-band-summary tbody th { color: var(--ph-moss); }
+.modelling-band-summary td small { color: #657169; font-size: 11px; }
+.modelling-band-summary > p { margin: 8px 0 0; color: #657169; font-size: 11px; line-height: 1.4; }
 .task-panel { padding: 16px; }
 .score-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .score-card { min-width: 0; padding: 16px 0; border: 0; border-top: 1px solid var(--rating-line); background: transparent; }
