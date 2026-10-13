@@ -19,6 +19,42 @@ export type AssessmentReferenceRecord = {
   reviewed_snapshot: AssessmentReferenceSnapshot | null
   reviewed_at: string | null
 }
+export type C1Snapshot = {
+  snapshot_id: string
+  packet_id: string
+  protocol_id: string
+  protocol_version: string
+  packet_version: string
+  panel_id: string
+  finalized_at: string
+  consensus_note: string
+  finalization_history: ConsensusHistoryEntry[]
+  criterion_ratings: Record<string, CriterionAnswer>
+  overall_comment: string
+  span_comments: SpanComment[]
+}
+export type FeedbackComparisonHistoryEntry = {
+  c1_snapshot_id: string
+  decision: 'keep' | 'revised'
+  revised_criterion_ratings: Record<string, number | null>
+  revision_reasons: Record<string, string>
+  finalized_at: string
+  reopened_at: string
+}
+export type FeedbackComparisonCase = {
+  status: 'in_progress' | 'finalized'
+  c1_snapshot_id: string
+  decision: 'keep' | 'revised' | null
+  revised_criterion_ratings: Record<string, number | null>
+  revision_reasons: Record<string, string>
+  finalized_at: string | null
+  history: FeedbackComparisonHistoryEntry[]
+}
+export type FeedbackComparisonState = {
+  stage: 'c1' | 'c2'
+  historical_feedback_revealed_at: string | null
+  cases: Record<string, FeedbackComparisonCase>
+}
 export type Criterion = { criterion_id: string; label: string; description: string; anchors?: Record<string, string> }
 export type Segment = { segment_id: string; order: number; text: string }
 export type SegmentAnnotation = { segment_id: string; dimension_id: string; skill_label?: string; level?: string }

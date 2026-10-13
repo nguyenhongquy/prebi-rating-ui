@@ -83,9 +83,9 @@ export function ReflectionViewer({ segments, annotations = [], dimensionLabels =
   </section>
 }
 
-export function OutputViewer({ packet, onSelection, evidence, selectedItem, onShowItem, assessmentReference }: { packet: Packet; onSelection: FeedbackSelectionHandler; evidence: EvidenceInteraction; selectedItem?: string | null; onShowItem?: (key: string, ids: string[]) => void; assessmentReference?: { state: string; scores: Record<string, number> | null; onConfirm?: () => void } }) {
+export function OutputViewer({ packet, onSelection, evidence, selectedItem, onShowItem, assessmentReference, historicalFeedback }: { packet: Packet; onSelection: FeedbackSelectionHandler; evidence: EvidenceInteraction; selectedItem?: string | null; onShowItem?: (key: string, ids: string[]) => void; assessmentReference?: { state: string; scores: Record<string, number> | null; onConfirm?: () => void }; historicalFeedback?: string }) {
   const title = packet.task === 'assessment_quality' ? 'Generierte Einschätzung' : packet.task === 'feedback_quality' ? 'Generiertes Feedback' : 'Menschliches Feedback'
-  return <section className="source-panel output-panel" aria-label={title}>
+  return <section className={`source-panel output-panel${historicalFeedback !== undefined ? ' historical-comparison-mode' : ''}`} aria-label={title}>
     <div className="panel-title"><h2>{title}</h2></div>
     {packet.task === 'assessment_quality' && <section className={`assessment-reference assessment-reference-${assessmentReference?.state ?? 'unavailable'}`} aria-label="Expertenreferenz">
       <strong>Expertenreferenz</strong>
@@ -108,10 +108,13 @@ export function OutputViewer({ packet, onSelection, evidence, selectedItem, onSh
         </div>) : <p className="empty-component">Keine Einträge in diesem Abschnitt.</p>}
       </section>)}</div> : <SourceText text={packet.human_feedback ?? ''} label="Menschliches Feedback" onSelect={event => onSelection(event, 'human_feedback', 0)} />}
     </div>
+    {packet.task === 'feedback_quality' && historicalFeedback !== undefined && <section className="historical-feedback-panel" aria-label="Historisches Feedback">
+      <h3>Historisches Feedback</h3><p>{historicalFeedback}</p>
+    </section>}
   </section>
 }
 
-export default function SourceComparison({ packet, onSelection, children, referenceEvidence, assessmentReference }: { packet: Packet; onSelection: FeedbackSelectionHandler; children?: ReactNode; referenceEvidence?: { ids: string[]; label: string; onToggle: (id: string) => void }; assessmentReference?: { state: string; scores: Record<string, number> | null; onConfirm?: () => void } }) {
+export default function SourceComparison({ packet, onSelection, children, referenceEvidence, assessmentReference, historicalFeedback }: { packet: Packet; onSelection: FeedbackSelectionHandler; children?: ReactNode; referenceEvidence?: { ids: string[]; label: string; onToggle: (id: string) => void }; assessmentReference?: { state: string; scores: Record<string, number> | null; onConfirm?: () => void }; historicalFeedback?: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
@@ -130,7 +133,7 @@ export default function SourceComparison({ packet, onSelection, children, refere
   }
   const reflectionOnly = packet.task === 'reflection_reference_score'
   return <ComparisonWorkspace reflectionOnly={reflectionOnly} reflection={<ReflectionViewer segments={packet.reflection.segments} annotations={reflectionOnly ? packet.segment_annotations : undefined} dimensionLabels={Object.fromEntries((packet.score_dimensions ?? []).map(dimension => [dimension.dimension_id, dimension.label]))} activeId={previewId ?? selectedId} activeIds={selectedIds} scrollRef={scrollRef} evidenceSelection={reflectionOnly ? referenceEvidence : undefined} />}>
-    {!reflectionOnly && <OutputViewer packet={packet} onSelection={onSelection} selectedItem={selectedItem} onShowItem={showItem} assessmentReference={assessmentReference} evidence={{ selectedId, selectedIds, onPreview: setPreviewId, onActivate: activateEvidence }} />}
+    {!reflectionOnly && <OutputViewer packet={packet} onSelection={onSelection} selectedItem={selectedItem} onShowItem={showItem} assessmentReference={assessmentReference} historicalFeedback={historicalFeedback} evidence={{ selectedId, selectedIds, onPreview: setPreviewId, onActivate: activateEvidence }} />}
     {children}
   </ComparisonWorkspace>
 }

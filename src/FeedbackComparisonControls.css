@@ -1,0 +1,21 @@
+.feedback-comparison-controls { margin-top: 18px; padding-top: 16px; border-top: 2px solid var(--rating-line); }
+.feedback-comparison-controls > .panel-title { align-items: center; }
+.feedback-comparison-controls h2 { margin: 0; color: var(--ph-moss); font-size: 17px; }
+.feedback-comparison-controls .panel-title > span { color: #536158; font-size: 12px; }
+.comparison-provenance { margin: 0 0 12px; color: var(--rating-muted); font-size: 11px; overflow-wrap: anywhere; }
+.c1-rating-list { display: grid; gap: 10px; }
+.c1-rating-row { padding: 10px 0; display: grid; gap: 8px; border-bottom: 1px solid var(--rating-line); }
+.c1-rating-row > strong { color: #344139; font-size: 13px; }
+.c1-rating-row > div:not(.field) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.c1-rating-row span { color: #536158; font-size: 12px; }
+.c1-rating-row b { color: var(--ph-moss); font-size: 14px; font-variant-numeric: tabular-nums; }
+.c1-criterion-comment { margin: 0; color: #536158; font-size: 12px; white-space: pre-wrap; }
+.c2-revised-score { padding-left: 10px; border-left: 3px solid var(--ph-green); }
+.c2-revised-score p { margin: 0; color: #536158; font-size: 12px; white-space: pre-wrap; }
+.feedback-comparison-controls .field { margin: 0; }
+.c1-overall { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rating-line); }
+.c1-overall strong { color: #344139; font-size: 12px; }
+.c1-overall p { margin: 6px 0 0; color: #536158; font-size: 12px; white-space: pre-wrap; }
+.c2-actions, .c2-finalized { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+.c2-finalized { align-items: center; justify-content: space-between; }
+.c2-finalized p { margin: 0; color: var(--ph-moss); font-size: 12px; }

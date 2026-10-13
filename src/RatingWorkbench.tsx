@@ -10,13 +10,14 @@ import { AppShell, PacketFileButton } from './AppShell'
 import './RatingWorkbench.css'
 import SourceComparison from './SourceComparison'
 import ConsensusControls from './ConsensusControls'
+import FeedbackComparisonControls from './FeedbackComparisonControls'
 import { componentLabels, type ConsensusCaseState, type Draft, type Packet, type RatingTask, type ScoreAnswer, type SpanComment } from './ratingTypes'
 import { answerError, canonicalJson, emptyDraft, evaluationSteps, isValidReferenceScore, parseReferenceScoreInput, referenceAnchorScores, REFERENCE_SCORE_SCALE, responseForDraft, type CaseState } from './ratingValidation'
 import RatingProgress from './RatingProgress'
 import PacketNavigator from './PacketNavigator'
 import { readSession, writeSession, listSessions } from './localSessions'
 import { WorkflowHelp, ResumePrompt, ExportSummary, PersistenceStatus } from './WorkflowSupport'
-import { assessmentReferenceState, assertConsensusBlinding, assertSourcesMatch, bundleHash, captureAssessmentReference, checkPacketHashes, consensusAnswerErrors, consensusCaseState, consensusResearchExport, draftFromResponse, emptyAssessmentReferences, emptyConsensus, expertCaseState, finalizedAssessmentReference, finalizeConsensus, flagConsensus, legacyDraft, reopenConsensus, researchExportPackets, resumeConsensus, sessionKey, validateDraft, validatePackets, validateSession, type ExpertSession, type PendingEditor } from './expertSession'
+import { assessmentReferenceState, assertConsensusBlinding, assertSourcesMatch, bundleHash, captureAssessmentReference, captureC1Snapshot, checkPacketHashes, consensusAnswerErrors, consensusCaseState, consensusResearchExport, draftFromResponse, emptyAssessmentReferences, emptyC1Snapshots, emptyConsensus, emptyFeedbackComparison, ensureFeedbackComparisonCase, enterFeedbackComparison, expertCaseState, feedbackC1GateReady, finalizeFeedbackComparison, finalizedAssessmentReference, finalizeConsensus, flagConsensus, historicalFeedbackVisible, latestC1Snapshot, legacyDraft, reopenConsensus, reopenFeedbackComparison, researchExportPackets, resumeConsensus, sessionKey, validateDraft, validatePackets, validateSession, type ExpertSession, type PendingEditor } from './expertSession'
 type SavedRating = {
   schema_version: '1.0.0' | '1.1.0'
   rating_id: string
@@ -98,7 +99,7 @@ function checkLegacySources(packets: Packet[]) {
 }
 
 function freshSession(session: ExpertSession): ExpertSession {
-  return { ...session, drafts: Object.fromEntries(session.packets.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, ...(session.evaluation_mode === 'expert_consensus' ? { consensus: emptyConsensus(session.packets), schema_version: '1.2.0' as const, assessment_reference_snapshots: emptyAssessmentReferences(session.packets) } : {}), active_task: firstTask(session.packets, session.evaluation_mode === 'expert_consensus'), active_index: 0, active_criterion: 0 }
+  return { ...session, drafts: Object.fromEntries(session.packets.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, ...(session.evaluation_mode === 'expert_consensus' ? { consensus: emptyConsensus(session.packets), schema_version: '1.2.0' as const, assessment_reference_snapshots: emptyAssessmentReferences(session.packets), c1_snapshots: emptyC1Snapshots(session.packets), feedback_comparison: emptyFeedbackComparison() } : {}), active_task: firstTask(session.packets, session.evaluation_mode === 'expert_consensus'), active_index: 0, active_criterion: 0 }
 }
 
 type PendingSession = {
@@ -147,6 +148,8 @@ export default function RatingWorkbench() {
   const doneCount = consensusMode ? consensusStates.filter(state => state === 'finalized').length : packetStates.filter(state => state === 'complete').length
   const exportPackets = session ? researchExportPackets(session) : []
   const completeCount = exportPackets.length
+  const feedbackC1Ready = Boolean(session && consensusMode && feedbackC1GateReady(session))
+  const feedbackC2Active = Boolean(session && historicalFeedbackVisible(session))
   const startedCount = session ? packets.filter(item => consensusMode
     ? item.task !== 'feedback_implied_score' && consensusCaseState(item, session) !== 'not_started'
     : packetState(item) !== 'not_started').length : 0
@@ -329,13 +332,17 @@ export default function RatingWorkbench() {
       if (!current?.consensus || !current.panel_id) return current
       const consensus = finalizeConsensus(current.consensus[packet.packet_id], packet, current.drafts[packet.packet_id], current.panel_id)
       const assessmentReferences = { ...(current.assessment_reference_snapshots ?? emptyAssessmentReferences(current.packets)) }
+      const c1Snapshots = { ...(current.c1_snapshots ?? emptyC1Snapshots(current.packets)) }
       if (packet.task === 'assessment_quality') {
         assessmentReferences[packet.packet_id] = captureAssessmentReference(packet, current)
+      }
+      if (packet.task === 'feedback_quality') {
+        c1Snapshots[packet.packet_id] = [...(c1Snapshots[packet.packet_id] ?? []), captureC1Snapshot(packet, current.drafts[packet.packet_id], consensus, current.panel_id)]
       }
       return {
         ...current,
         consensus: { ...current.consensus, [packet.packet_id]: consensus },
-        ...(current.schema_version === '1.2.0' ? { assessment_reference_snapshots: assessmentReferences } : {}),
+        ...(current.schema_version === '1.2.0' ? { assessment_reference_snapshots: assessmentReferences, c1_snapshots: c1Snapshots } : {}),
       }
     })
     setError('')
@@ -354,11 +361,87 @@ export default function RatingWorkbench() {
     })
   }
 
+  function openHistoricalComparison() {
+    if (!session || !feedbackC1GateReady(session)) return
+    try {
+      const comparison = enterFeedbackComparison(session)
+      setSession(current => current ? { ...current, feedback_comparison: comparison } : current)
+      setError('')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Der historische Vergleich ist noch nicht verfügbar.')
+    }
+  }
+
+  function returnToC1() {
+    setSession(current => current?.feedback_comparison
+      ? { ...current, feedback_comparison: { ...current.feedback_comparison, stage: 'c1' } }
+      : current)
+  }
+
+  function updateCurrentC2Case(update: (comparison: NonNullable<ExpertSession['feedback_comparison']>['cases'][string], snapshot: NonNullable<ReturnType<typeof latestC1Snapshot>>) => NonNullable<ExpertSession['feedback_comparison']>['cases'][string]) {
+    if (!packet || packet.task !== 'feedback_quality' || !session || !feedbackC2Active) return
+    const snapshot = latestC1Snapshot(packet, session)
+    if (!snapshot) return
+    const state = session.feedback_comparison ?? emptyFeedbackComparison()
+    const prepared = ensureFeedbackComparisonCase(packet, snapshot, state)
+    const comparison = prepared.cases[packet.packet_id]
+    try {
+      const nextComparison = update(comparison, snapshot)
+      setSession(current => current?.feedback_comparison
+        ? { ...current, feedback_comparison: { ...current.feedback_comparison, cases: { ...current.feedback_comparison.cases, [packet.packet_id]: nextComparison } } }
+        : current)
+      setError('')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Der Vergleich konnte nicht gespeichert werden.')
+    }
+  }
+
+  function decideCurrentC2(decision: 'keep' | 'revised') {
+    if (decision === 'revised') {
+      updateCurrentC2Case(comparison => ({ ...comparison, decision: 'revised' }))
+      return
+    }
+    updateCurrentC2Case((comparison, snapshot) => finalizeFeedbackComparison(packet!, snapshot, {
+      ...comparison,
+      decision: 'keep',
+      revised_criterion_ratings: Object.fromEntries(Object.entries(snapshot.criterion_ratings).map(([id, answer]) => [id, answer.score])),
+      revision_reasons: {},
+    }))
+  }
+
+  function changeCurrentC2Score(criterionId: string, score: number | null) {
+    updateCurrentC2Case(comparison => ({
+      ...comparison,
+      revised_criterion_ratings: { ...comparison.revised_criterion_ratings, [criterionId]: score },
+    }))
+  }
+
+  function changeCurrentC2Reason(criterionId: string, reason: string) {
+    updateCurrentC2Case(comparison => ({
+      ...comparison,
+      revision_reasons: { ...comparison.revision_reasons, [criterionId]: reason },
+    }))
+  }
+
+  function finalizeCurrentC2() {
+    updateCurrentC2Case((comparison, snapshot) => finalizeFeedbackComparison(packet!, snapshot, comparison))
+  }
+
+  function reopenCurrentC2() {
+    updateCurrentC2Case(comparison => reopenFeedbackComparison(comparison))
+  }
+
   function reopenCurrentCase() {
     if (!packet || !consensusRecord || !consensusFinalized) return
     setSession(current => {
       const record = current?.consensus?.[packet.packet_id]
-      return current && record ? { ...current, consensus: { ...current.consensus, [packet.packet_id]: reopenConsensus(record) } } : current
+      return current && record ? {
+        ...current,
+        consensus: { ...current.consensus, [packet.packet_id]: reopenConsensus(record) },
+        ...(packet.task === 'feedback_quality' && current.feedback_comparison
+          ? { feedback_comparison: { ...current.feedback_comparison, stage: 'c1' } }
+          : {}),
+      } : current
     })
     setError('')
   }
@@ -366,7 +449,7 @@ export default function RatingWorkbench() {
   async function installSession(chosen: ExpertSession, fingerprint: string | undefined) {
     await writeQueue.current
     if (chosen.evaluation_mode === 'expert_consensus' && chosen.schema_version === '1.1.0') {
-      chosen = { ...chosen, schema_version: '1.2.0', assessment_reference_snapshots: emptyAssessmentReferences(chosen.packets) }
+      chosen = { ...chosen, schema_version: '1.2.0', assessment_reference_snapshots: emptyAssessmentReferences(chosen.packets), c1_snapshots: emptyC1Snapshots(chosen.packets), feedback_comparison: emptyFeedbackComparison() }
     }
     const existing = await readSession<unknown>(sessionKey(chosen))
     const actual = existing === undefined ? undefined : canonicalJson(existing)
@@ -474,7 +557,7 @@ export default function RatingWorkbench() {
         ;[ordered[index], ordered[next]] = [ordered[next], ordered[index]]
       }
       const incoming: ExpertSession = evaluationMode === 'expert_consensus'
-        ? { kind: 'prebi_expert_session', schema_version: '1.2.0', evaluator_id: activeIdentity, evaluation_mode: 'expert_consensus', panel_id: activeIdentity, bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, consensus: emptyConsensus(ordered), assessment_reference_snapshots: emptyAssessmentReferences(ordered), active_task: firstTask(ordered, true), active_index: 0, active_criterion: 0 }
+        ? { kind: 'prebi_expert_session', schema_version: '1.2.0', evaluator_id: activeIdentity, evaluation_mode: 'expert_consensus', panel_id: activeIdentity, bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, consensus: emptyConsensus(ordered), assessment_reference_snapshots: emptyAssessmentReferences(ordered), c1_snapshots: emptyC1Snapshots(ordered), feedback_comparison: emptyFeedbackComparison(), active_task: firstTask(ordered, true), active_index: 0, active_criterion: 0 }
         : { kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: activeIdentity, bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, active_task: firstTask(ordered), active_index: 0, active_criterion: 0 }
       await prepareSession(evaluationMode === 'expert_consensus' ? await validateSession(incoming) : incoming, false)
     })
@@ -565,6 +648,16 @@ export default function RatingWorkbench() {
   const taskBReference = packet?.task === 'assessment_quality' && session && consensusMode
     ? assessmentReferenceState(packet, session)
     : undefined
+  const c2Snapshot = packet?.task === 'feedback_quality' && session && feedbackC2Active
+    ? latestC1Snapshot(packet, session)
+    : null
+  const c2State = feedbackC2Active ? session?.feedback_comparison : undefined
+  const c2PreparedState = packet?.task === 'feedback_quality' && c2Snapshot && c2State
+    ? ensureFeedbackComparisonCase(packet, c2Snapshot, c2State)
+    : undefined
+  const c2Case = packet?.task === 'feedback_quality' && c2PreparedState
+    ? c2PreparedState.cases[packet.packet_id]
+    : undefined
   function toggleReferenceEvidence(id: string) {
     if (!referenceDimension || !draft || !referenceAnswer) return
     const evidence = new Set(referenceAnswer.evidence_segment_ids)
@@ -585,7 +678,7 @@ export default function RatingWorkbench() {
         <details className="start-storage-actions"><summary>Ältere Forschungsbewertungen</summary><p>{savedForEvaluator.length} gespeicherte Bewertungen</p><button className="icon-button" disabled={!savedForEvaluator.length} onClick={() => downloadJson('ratings-stored.json', { schema_version: '1.0.0', ratings: savedForEvaluator })}><Download size={16} />Forschungsformat exportieren</button></details>
       </section>
     </main> : <>
-      <div className="rating-toolbar"><div className="task-tabs" role="tablist" aria-label="Bewertungsaufgabe">{availableTasks(packets, consensusMode).map(task => <button key={task} role="tab" aria-selected={taskFilter === task} className={taskFilter === task ? 'active' : ''} onClick={() => setSession(current => current ? { ...current, active_task: task, active_index: 0, active_criterion: 0 } : current)}>{TASK_LABELS[task]}</button>)}</div><div className="rating-actions"><button className="icon-button" onClick={() => setExportOpen(true)} disabled={!startedCount}><Download size={16} />{consensusMode ? 'Arbeitsstand exportieren' : 'Stand exportieren'}</button><details className="file-management"><summary><FileJson size={18} />Dateien &amp; technische Details</summary><div className="rating-actions"><PacketFileButton onImport={importPacketFile} /><button className="icon-button" disabled={!completeCount} onClick={exportResearch}><Download size={16} />{consensusMode ? 'Finalisierte Konsensratings exportieren' : 'Vollständige Bewertungen im Forschungsformat'}</button><button className="icon-button" onClick={() => setPending({ incoming: session, saved: session, fingerprint: expectedFingerprint.current, conflict: false })}>Neu beginnen</button><button className="icon-button" onClick={() => { if (persistence !== 'saved' && !window.confirm('Der aktuelle Stand ist noch nicht sicher gespeichert. Trotzdem zur Startseite wechseln?')) return; generation.current += 1; setSession(null); setPersistence('idle'); setError('') }}>Sitzung schließen</button></div><p>Bundle: {session.bundle_sha256}</p>{packet && <dl><dt>Fall-ID</dt><dd>{packet.packet_id}</dd><dt>Paketversion</dt><dd>{packet.packet_version}</dd><dt>Protokoll</dt><dd>{packet.protocol_id} · {packet.protocol_version}</dd><dt>Ausgabe-Prüfsumme</dt><dd>{packet.display_output_sha256 ?? 'Nicht vorhanden'}</dd><dt>Reflexions-Prüfsumme</dt><dd>{packet.displayed_reflection_sha256 ?? 'Nicht vorhanden'}</dd></dl>}</details></div></div>
+      <div className="rating-toolbar"><div className="task-tabs" role="tablist" aria-label="Bewertungsaufgabe">{availableTasks(packets, consensusMode).map(task => <button key={task} role="tab" aria-selected={taskFilter === task} className={taskFilter === task ? 'active' : ''} onClick={() => setSession(current => current ? { ...current, active_task: task, active_index: 0, active_criterion: 0 } : current)}>{TASK_LABELS[task]}</button>)}</div><div className="rating-actions"><button className="icon-button" onClick={() => setExportOpen(true)} disabled={!startedCount}><Download size={16} />{consensusMode ? 'Arbeitsstand exportieren' : 'Stand exportieren'}</button>{consensusMode && (feedbackC2Active ? <button className="icon-button" onClick={returnToC1}>Zur C1-Bewertung</button> : <button className="icon-button" disabled={!feedbackC1Ready} onClick={openHistoricalComparison}>{feedbackC1Ready ? 'Historischer Vergleich' : 'Vergleich noch nicht verfügbar'}</button>)}<details className="file-management"><summary><FileJson size={18} />Dateien &amp; technische Details</summary><div className="rating-actions"><PacketFileButton onImport={importPacketFile} /><button className="icon-button" disabled={!completeCount} onClick={exportResearch}><Download size={16} />{consensusMode ? 'Finalisierte Konsensratings exportieren' : 'Vollständige Bewertungen im Forschungsformat'}</button><button className="icon-button" onClick={() => setPending({ incoming: session, saved: session, fingerprint: expectedFingerprint.current, conflict: false })}>Neu beginnen</button><button className="icon-button" onClick={() => { if (persistence !== 'saved' && !window.confirm('Der aktuelle Stand ist noch nicht sicher gespeichert. Trotzdem zur Startseite wechseln?')) return; generation.current += 1; setSession(null); setPersistence('idle'); setError('') }}>Sitzung schließen</button></div><p>Bundle: {session.bundle_sha256}</p>{packet && <dl><dt>Fall-ID</dt><dd>{packet.packet_id}</dd><dt>Paketversion</dt><dd>{packet.packet_version}</dd><dt>Protokoll</dt><dd>{packet.protocol_id} · {packet.protocol_version}</dd><dt>Ausgabe-Prüfsumme</dt><dd>{packet.display_output_sha256 ?? 'Nicht vorhanden'}</dd><dt>Reflexions-Prüfsumme</dt><dd>{packet.displayed_reflection_sha256 ?? 'Nicht vorhanden'}</dd></dl>}</details></div></div>
       <div className="rating-status"><ShieldCheck size={16} /><PersistenceStatus state={persistence} /></div>
       {persistence === 'error' && <div className="rating-actions"><button className="icon-button" onClick={() => setSaveAttempt(value => value + 1)}>Speicherung erneut versuchen</button><button className="icon-button" onClick={inspectSaved}>Gespeicherten Stand prüfen</button><button className="icon-button" onClick={exportSession}><Download size={16} />Aktuellen Stand sichern</button></div>}
       <WorkflowHelp consensus={consensusMode} />
@@ -598,11 +691,16 @@ export default function RatingWorkbench() {
         onConfirm: consensusFinalized && taskBReference.current && (taskBReference.state === 'changed' || taskBReference.state === 'available')
           ? confirmCurrentAssessmentReference
           : undefined,
-      } : undefined}><section className="task-panel" aria-label="Ihre Bewertung"><div className="panel-title"><span>Ihre Bewertung</span></div>
-        {packet.task === 'feedback_implied_score' ? <p className="draft-progress">{steps.filter((_, index) => !answerError(packet, draft, index)).length} / {steps.length} Dimensionen vollständig</p> : <RatingProgress packet={packet} draft={draft} activeIndex={criterionIndex} onNavigate={navigateCriterion} />}
-        {packet.task !== 'feedback_implied_score' && <p className="criterion-position">{packet.task === 'reflection_reference_score' ? 'Dimension' : 'Kriterium'} {criterionIndex + 1} von {steps.length}</p>}
-        <fieldset className="rating-edit-fieldset" disabled={consensusFinalized}>{packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} addSpanComment={addSpanComment} /> : packet.task === 'reflection_reference_score' ? <ReferenceRating key={`${packet.packet_id}-${criterionIndex}`} packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} /> : <QualityRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} spanTags={spanTags} setSpanTags={editSpanTags} addSpanComment={addSpanComment} />}</fieldset>
-        {consensusMode && consensusRecord && <ConsensusControls key={packet.packet_id} status={consensusStatus} note={consensusRecord.note} answerComplete={packetState(packet) === 'complete'} answerErrors={consensusAnswerErrors(packet, draft)} finalizedAt={consensusRecord.finalized_at} finalizedBy={consensusRecord.finalized_by} finalizationHistory={consensusRecord.finalization_history} onNoteChange={editConsensusNote} onFlag={flagCurrentCase} onResume={resumeCurrentCase} onFinalize={finalizeCurrentCase} onReopen={reopenCurrentCase} />}
+      } : undefined} historicalFeedback={feedbackC2Active && packet.task === 'feedback_quality' && packet.human_feedback?.trim() ? packet.human_feedback : undefined}><section className={`task-panel${feedbackC2Active && packet.task === 'feedback_quality' ? ' c2-panel' : ''}`} aria-label={feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}><div className="panel-title"><span>{feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}</span></div>
+        {feedbackC2Active && packet.task === 'feedback_quality' ? packet.human_feedback?.trim() && c2Snapshot && c2Case
+          ? <FeedbackComparisonControls packet={packet} snapshot={c2Snapshot} comparison={c2Case} onDecision={decideCurrentC2} onScoreChange={changeCurrentC2Score} onReasonChange={changeCurrentC2Reason} onFinalize={finalizeCurrentC2} onReopen={reopenCurrentC2} />
+          : <div className="comparison-unavailable" role="status"><strong>Vergleich noch nicht verfügbar</strong><p>Für diesen Fall liegt kein historisches Feedback vor.</p></div>
+          : <>
+            {packet.task === 'feedback_implied_score' ? <p className="draft-progress">{steps.filter((_, index) => !answerError(packet, draft, index)).length} / {steps.length} Dimensionen vollständig</p> : <RatingProgress packet={packet} draft={draft} activeIndex={criterionIndex} onNavigate={navigateCriterion} />}
+            {packet.task !== 'feedback_implied_score' && <p className="criterion-position">{packet.task === 'reflection_reference_score' ? 'Dimension' : 'Kriterium'} {criterionIndex + 1} von {steps.length}</p>}
+            <fieldset className="rating-edit-fieldset" disabled={consensusFinalized}>{packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} addSpanComment={addSpanComment} /> : packet.task === 'reflection_reference_score' ? <ReferenceRating key={`${packet.packet_id}-${criterionIndex}`} packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} /> : <QualityRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} spanTags={spanTags} setSpanTags={editSpanTags} addSpanComment={addSpanComment} />}</fieldset>
+            {consensusMode && consensusRecord && <ConsensusControls key={packet.packet_id} status={consensusStatus} note={consensusRecord.note} answerComplete={packetState(packet) === 'complete'} answerErrors={consensusAnswerErrors(packet, draft)} finalizedAt={consensusRecord.finalized_at} finalizedBy={consensusRecord.finalized_by} finalizationHistory={consensusRecord.finalization_history} onNoteChange={editConsensusNote} onFlag={flagCurrentCase} onResume={resumeCurrentCase} onFinalize={finalizeCurrentCase} onReopen={reopenCurrentCase} />}
+          </>}
       </section><footer className="rating-footer"><PersistenceStatus state={persistence} /><div>{packet.task !== 'feedback_implied_score' && <button className="icon-button" disabled={criterionIndex === 0} onClick={() => navigateCriterion(criterionIndex - 1)} title="Vorheriges Kriterium" aria-label="Vorheriges Kriterium"><ChevronLeft size={16} /></button>}{packet.task !== 'feedback_implied_score' && criterionIndex < steps.length - 1 ? <button className="submit-button" onClick={nextCriterion}>Nächstes Kriterium<ChevronRight size={16} /></button> : <button className="submit-button" onClick={nextCase}>Nächster Fall<ChevronRight size={16} /></button>}</div></footer></SourceComparison></main></div>}
     </>}
   </AppShell>

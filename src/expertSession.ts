@@ -1,4 +1,4 @@
-import type { AssessmentReferenceRecord, AssessmentReferenceSnapshot, ConsensusCaseState, ConsensusHistoryEntry, ConsensusRecord, Draft, Packet, RatingTask } from './ratingTypes'
+import type { AssessmentReferenceRecord, AssessmentReferenceSnapshot, C1Snapshot, ConsensusCaseState, ConsensusHistoryEntry, ConsensusRecord, Draft, FeedbackComparisonCase, FeedbackComparisonHistoryEntry, FeedbackComparisonState, Packet, RatingTask } from './ratingTypes'
 import { answerError, canonicalJson, caseState, emptyDraft, evaluationSteps, isValidReferenceScore, REFERENCE_SCORE_SCALE, responseForDraft } from './ratingValidation'
 
 export type PendingEditor = {
@@ -23,6 +23,8 @@ export type ExpertSession = {
   panel_members?: string[]
   consensus?: Record<string, ConsensusRecord>
   assessment_reference_snapshots?: Record<string, AssessmentReferenceRecord>
+  c1_snapshots?: Record<string, C1Snapshot[]>
+  feedback_comparison?: FeedbackComparisonState
 }
 
 const tasks = ['reflection_reference_score', 'assessment_quality', 'feedback_quality', 'feedback_implied_score']
@@ -261,6 +263,8 @@ export function validatePackets(value: unknown): Packet[] {
       identifiers(packet.score_dimensions, 'dimension_id')
       packet.score_dimensions.forEach(dimension => text(object(dimension).label))
     } else {
+      if (packet.task === 'assessment_quality' && Object.hasOwn(packet, 'human_feedback')) throw new Error('Historisches Feedback ist in Task B nicht zulässig.')
+      if (packet.task === 'feedback_quality' && packet.human_feedback !== undefined) text(packet.human_feedback)
       if (!Array.isArray(packet.criteria) || !packet.criteria.length) throw new Error('Kriterien fehlen.')
       identifiers(packet.criteria, 'criterion_id')
       for (const criterion of packet.criteria) {
@@ -366,6 +370,177 @@ export function captureAssessmentReference(packet: Packet, session: ExpertSessio
   return previous.used_snapshot
     ? previous
     : { ...previous, used_snapshot: finalizedAssessmentReference(packet, session) }
+}
+
+export function captureC1Snapshot(
+  packet: Packet,
+  draft: Draft,
+  consensus: ConsensusRecord,
+  panelId: string,
+  snapshotId = crypto.randomUUID(),
+): C1Snapshot {
+  if (packet.task !== 'feedback_quality' || consensus.status !== 'finalized' || !consensus.finalized_at) {
+    throw new Error('Ein C1-Snapshot benötigt einen finalisierten Feedback-Qualitätsfall.')
+  }
+  return {
+    snapshot_id: snapshotId,
+    packet_id: packet.packet_id,
+    protocol_id: packet.protocol_id,
+    protocol_version: packet.protocol_version,
+    packet_version: packet.packet_version,
+    panel_id: panelIdentifier(panelId),
+    finalized_at: consensus.finalized_at,
+    consensus_note: consensus.note,
+    finalization_history: consensus.finalization_history.map(item => ({ ...item })),
+    criterion_ratings: JSON.parse(JSON.stringify(draft.criterionRatings)) as Draft['criterionRatings'],
+    overall_comment: draft.overallComment,
+    span_comments: JSON.parse(JSON.stringify(draft.spanComments)) as Draft['spanComments'],
+  }
+}
+
+export function emptyC1Snapshots(packets: Packet[]): Record<string, C1Snapshot[]> {
+  return Object.fromEntries(packets.filter(packet => packet.task === 'feedback_quality').map(packet => [packet.packet_id, []]))
+}
+
+export function emptyFeedbackComparison(): FeedbackComparisonState {
+  return { stage: 'c1', historical_feedback_revealed_at: null, cases: {} }
+}
+
+export function latestC1Snapshot(packet: Packet, session: ExpertSession): C1Snapshot | null {
+  if (packet.task !== 'feedback_quality') return null
+  const record = session.consensus?.[packet.packet_id]
+  const snapshots = session.c1_snapshots?.[packet.packet_id] ?? []
+  const latest = snapshots.at(-1)
+  return record?.status === 'finalized' && record.finalized_at && latest?.finalized_at === record.finalized_at
+    ? latest
+    : null
+}
+
+export function feedbackC1GateReady(session: ExpertSession): boolean {
+  if (session.evaluation_mode !== 'expert_consensus' || session.schema_version !== '1.2.0') return false
+  const packets = session.packets.filter(packet => packet.task === 'feedback_quality')
+  return packets.length > 0 && packets.every(packet => latestC1Snapshot(packet, session) !== null)
+}
+
+export function historicalFeedbackVisible(session: ExpertSession): boolean {
+  return feedbackC1GateReady(session)
+    && session.feedback_comparison?.stage === 'c2'
+    && Boolean(session.feedback_comparison.historical_feedback_revealed_at)
+}
+
+export function enterFeedbackComparison(session: ExpertSession, revealedAt = new Date().toISOString()): FeedbackComparisonState {
+  if (!feedbackC1GateReady(session)) throw new Error('Der historische Vergleich wird erst nach Abschluss aller C1-Feedbackbewertungen verfügbar.')
+  if (!validTimestamp(revealedAt)) throw new Error('Ungültiger Zeitpunkt der Feedbackoffenlegung.')
+  const previous = session.feedback_comparison
+  let state: FeedbackComparisonState = {
+    stage: 'c2',
+    historical_feedback_revealed_at: previous?.historical_feedback_revealed_at ?? revealedAt,
+    cases: previous?.cases ?? {},
+  }
+  for (const packet of session.packets.filter(item => item.task === 'feedback_quality')) {
+    const snapshot = latestC1Snapshot(packet, session)
+    if (snapshot) state = ensureFeedbackComparisonCase(packet, snapshot, state, revealedAt)
+  }
+  return state
+}
+
+export function ensureFeedbackComparisonCase(
+  packet: Packet,
+  snapshot: C1Snapshot,
+  state: FeedbackComparisonState,
+  reopenedAt = new Date().toISOString(),
+): FeedbackComparisonState {
+  if (packet.task !== 'feedback_quality' || snapshot.packet_id !== packet.packet_id) throw new Error('C2-Fall und C1-Snapshot stimmen nicht überein.')
+  const existing = state.cases[packet.packet_id]
+  if (existing?.c1_snapshot_id === snapshot.snapshot_id) return state
+  const history = [...(existing?.history ?? [])]
+  if (existing?.status === 'finalized' && existing.decision && existing.finalized_at) {
+    history.push({
+      c1_snapshot_id: existing.c1_snapshot_id,
+      decision: existing.decision,
+      revised_criterion_ratings: { ...existing.revised_criterion_ratings },
+      revision_reasons: { ...existing.revision_reasons },
+      finalized_at: existing.finalized_at,
+      reopened_at: validTimestamp(reopenedAt) ? reopenedAt : new Date().toISOString(),
+    })
+  }
+  const revisedCriterionRatings = Object.fromEntries(
+    Object.entries(snapshot.criterion_ratings).map(([criterionId, answer]) => [criterionId, answer.score]),
+  )
+  return {
+    ...state,
+    cases: {
+      ...state.cases,
+      [packet.packet_id]: {
+        status: 'in_progress',
+        c1_snapshot_id: snapshot.snapshot_id,
+        decision: null,
+        revised_criterion_ratings: revisedCriterionRatings,
+        revision_reasons: {},
+        finalized_at: null,
+        history,
+      },
+    },
+  }
+}
+
+export function feedbackComparisonErrors(packet: Packet, snapshot: C1Snapshot, comparison: FeedbackComparisonCase): string[] {
+  if (packet.task !== 'feedback_quality' || comparison.c1_snapshot_id !== snapshot.snapshot_id) return ['Der C2-Vergleich verweist nicht auf den aktuellen C1-Snapshot.']
+  const errors: string[] = []
+  const criterionIds = (packet.criteria ?? []).map(criterion => criterion.criterion_id)
+  if (canonicalJson(Object.keys(comparison.revised_criterion_ratings).sort()) !== canonicalJson([...criterionIds].sort())) {
+    return ['C2 muss alle Kriterien der C1-Bewertung enthalten.']
+  }
+  if (comparison.decision === 'keep') {
+    if (criterionIds.some(criterionId => comparison.revised_criterion_ratings[criterionId] !== snapshot.criterion_ratings[criterionId].score)
+      || Object.keys(comparison.revision_reasons).length > 0) return ['Beibehaltene C2-Werte müssen der C1-Bewertung entsprechen.']
+    return []
+  }
+  if (comparison.decision !== 'revised') return ['Wählen Sie, ob Sie die C1-Bewertung beibehalten oder revidieren.']
+  for (const criterionId of criterionIds) {
+    const original = snapshot.criterion_ratings[criterionId]
+    const revised = comparison.revised_criterion_ratings[criterionId]
+      if (!original || (revised !== null && (!Number.isInteger(revised) || revised < (packet.scale?.min ?? 1) || revised > (packet.scale?.max ?? 5)))) {
+      errors.push(`Ungültiger C2-Punktwert für ${criterionId}.`)
+      continue
+    }
+    if (revised !== original.score && (comparison.revision_reasons[criterionId] ?? '').trim().length < 5) {
+      errors.push(`Begründen Sie die Änderung für ${criterionId} mit mindestens fünf Zeichen.`)
+    }
+  }
+  if (!criterionIds.some(criterionId => comparison.revised_criterion_ratings[criterionId] !== snapshot.criterion_ratings[criterionId].score)) {
+    errors.push('Bei unveränderten Punktwerten wählen Sie „Bewertung beibehalten“.')
+  }
+  return errors
+}
+
+export function finalizeFeedbackComparison(
+  packet: Packet,
+  snapshot: C1Snapshot,
+  comparison: FeedbackComparisonCase,
+  finalizedAt = new Date().toISOString(),
+): FeedbackComparisonCase {
+  const errors = feedbackComparisonErrors(packet, snapshot, comparison)
+  if (errors.length) throw new Error(errors.join(' '))
+  if (!validTimestamp(finalizedAt)) throw new Error('Ungültiger Zeitpunkt für den Vergleichsabschluss.')
+  return { ...comparison, status: 'finalized', finalized_at: finalizedAt }
+}
+
+export function reopenFeedbackComparison(
+  comparison: FeedbackComparisonCase,
+  reopenedAt = new Date().toISOString(),
+): FeedbackComparisonCase {
+  if (comparison.status !== 'finalized' || !comparison.decision || !comparison.finalized_at) throw new Error('Nur ein abgeschlossener Vergleich kann erneut geöffnet werden.')
+  if (!validTimestamp(reopenedAt)) throw new Error('Ungültiger Zeitpunkt für das erneute Öffnen.')
+  const historyEntry: FeedbackComparisonHistoryEntry = {
+    c1_snapshot_id: comparison.c1_snapshot_id,
+    decision: comparison.decision,
+    revised_criterion_ratings: { ...comparison.revised_criterion_ratings },
+    revision_reasons: { ...comparison.revision_reasons },
+    finalized_at: comparison.finalized_at,
+    reopened_at: reopenedAt,
+  }
+  return { ...comparison, status: 'in_progress', decision: null, finalized_at: null, history: [...comparison.history, historyEntry] }
 }
 
 export async function sha256(value: unknown) {
@@ -551,6 +726,126 @@ function validateAssessmentReferences(value: unknown, packets: Packet[]): Record
   }))
 }
 
+function validateC1Snapshots(value: unknown, packets: Packet[]): Record<string, C1Snapshot[]> {
+  const feedbackPackets = packets.filter(packet => packet.task === 'feedback_quality')
+  const records = exact(value, feedbackPackets.map(packet => packet.packet_id))
+  const snapshotIds = new Set<string>()
+  return Object.fromEntries(feedbackPackets.map(packet => {
+    const values = records[packet.packet_id]
+    if (!Array.isArray(values)) throw new Error('Ungültige C1-Snapshotliste.')
+    const snapshots = values.map(value => {
+      const entry = exact(value, [
+        'snapshot_id', 'packet_id', 'protocol_id', 'protocol_version', 'packet_version',
+        'panel_id', 'finalized_at', 'consensus_note', 'finalization_history',
+        'criterion_ratings', 'overall_comment', 'span_comments',
+      ])
+      for (const field of ['snapshot_id', 'packet_id', 'protocol_id', 'protocol_version', 'packet_version', 'panel_id', 'consensus_note', 'overall_comment']) text(entry[field])
+      const snapshotId = entry.snapshot_id as string
+      if (!snapshotId || snapshotIds.has(snapshotId)) throw new Error('C1-Snapshot-IDs müssen eindeutig sein.')
+      snapshotIds.add(snapshotId)
+      if (entry.packet_id !== packet.packet_id || entry.protocol_id !== packet.protocol_id
+        || entry.protocol_version !== packet.protocol_version || entry.packet_version !== packet.packet_version) {
+        throw new Error('C1-Snapshot und Feedbackpaket stimmen nicht überein.')
+      }
+      const panelId = panelIdentifier(entry.panel_id)
+      if (!validTimestamp(entry.finalized_at) || !Array.isArray(entry.finalization_history)) throw new Error('Ungültige C1-Finalisierungsdaten.')
+      const history = entry.finalization_history.map(value => {
+        const item = exact(value, ['finalized_at', 'finalized_by'])
+        if (!validTimestamp(item.finalized_at) || panelIdentifier(item.finalized_by) !== panelId) throw new Error('Ungültige C1-Finalisierungshistorie.')
+        return { finalized_at: item.finalized_at, finalized_by: item.finalized_by } as ConsensusHistoryEntry
+      })
+      const draft = validateDraft(packet, {
+        criterionRatings: entry.criterion_ratings,
+        scoreAnswers: {}, referenceAnswers: {},
+        overallComment: entry.overall_comment, spanComments: entry.span_comments,
+      })
+      if (consensusAnswerErrors(packet, draft).length) throw new Error('C1-Snapshots müssen vollständige Bewertungen enthalten.')
+      return {
+        snapshot_id: snapshotId, packet_id: packet.packet_id,
+        protocol_id: packet.protocol_id, protocol_version: packet.protocol_version,
+        packet_version: packet.packet_version, panel_id: panelId,
+        finalized_at: entry.finalized_at, consensus_note: entry.consensus_note,
+        finalization_history: history, criterion_ratings: draft.criterionRatings,
+        overall_comment: draft.overallComment, span_comments: draft.spanComments,
+      } as C1Snapshot
+    })
+    for (let index = 1; index < snapshots.length; index++) {
+      if (Date.parse(snapshots[index].finalized_at) < Date.parse(snapshots[index - 1].finalized_at)) throw new Error('C1-Snapshots müssen in Finalisierungsreihenfolge gespeichert sein.')
+    }
+    return [packet.packet_id, snapshots]
+  }))
+}
+
+function validateFeedbackComparison(value: unknown, packets: Packet[], snapshots: Record<string, C1Snapshot[]>, session: ExpertSession): FeedbackComparisonState {
+  const entry = exact(value, ['stage', 'historical_feedback_revealed_at', 'cases'])
+  text(entry.stage)
+  if (entry.stage !== 'c1' && entry.stage !== 'c2') throw new Error('Ungültige C2-Sitzungsphase.')
+  if (entry.historical_feedback_revealed_at !== null && !validTimestamp(entry.historical_feedback_revealed_at)) throw new Error('Ungültiger Zeitpunkt der historischen Feedbackoffenlegung.')
+  const records = object(entry.cases)
+  const feedbackPackets = packets.filter(packet => packet.task === 'feedback_quality')
+  const packetById = new Map(feedbackPackets.map(packet => [packet.packet_id, packet]))
+  const cases: Record<string, FeedbackComparisonCase> = {}
+  for (const [packetId, value] of Object.entries(records)) {
+    const packet = packetById.get(packetId)
+    if (!packet) throw new Error('C2-Vergleich verweist auf keinen Feedbackfall.')
+    const item = exact(value, ['status', 'c1_snapshot_id', 'decision', 'revised_criterion_ratings', 'revision_reasons', 'finalized_at', 'history'])
+    text(item.status)
+    text(item.c1_snapshot_id)
+    if (!['in_progress', 'finalized'].includes(item.status)) throw new Error('Ungültiger C2-Status.')
+    const snapshot = (snapshots[packetId] ?? []).find(candidate => candidate.snapshot_id === item.c1_snapshot_id)
+    if (!snapshot) throw new Error('C2 muss auf einen gespeicherten C1-Snapshot verweisen.')
+    if (item.decision !== null && item.decision !== 'keep' && item.decision !== 'revised') throw new Error('Ungültige C2-Entscheidung.')
+    if (!item.revised_criterion_ratings || typeof item.revised_criterion_ratings !== 'object' || Array.isArray(item.revised_criterion_ratings)) throw new Error('Ungültige C2-Kriterienbewertungen.')
+    const revisedRatings = object(item.revised_criterion_ratings)
+    for (const scoreValue of Object.values(revisedRatings)) score(scoreValue)
+    if (!item.revision_reasons || typeof item.revision_reasons !== 'object' || Array.isArray(item.revision_reasons)) throw new Error('Ungültige C2-Begründungen.')
+    const reasons = object(item.revision_reasons)
+    Object.values(reasons).forEach(text)
+    if (!Array.isArray(item.history)) throw new Error('Ungültiger C2-Verlauf.')
+    const history = item.history.map(value => {
+      const record = exact(value, ['c1_snapshot_id', 'decision', 'revised_criterion_ratings', 'revision_reasons', 'finalized_at', 'reopened_at'])
+      text(record.c1_snapshot_id)
+      if (!(snapshots[packetId] ?? []).some(candidate => candidate.snapshot_id === record.c1_snapshot_id)) throw new Error('C2-Verlauf verweist auf keinen C1-Snapshot.')
+      if (record.decision !== 'keep' && record.decision !== 'revised') throw new Error('Ungültige frühere C2-Entscheidung.')
+      if (!validTimestamp(record.finalized_at) || !validTimestamp(record.reopened_at)) throw new Error('Ungültige C2-Verlaufszeitpunkte.')
+      return {
+        c1_snapshot_id: record.c1_snapshot_id,
+        decision: record.decision,
+        revised_criterion_ratings: object(record.revised_criterion_ratings) as Record<string, number | null>,
+        revision_reasons: object(record.revision_reasons) as Record<string, string>,
+        finalized_at: record.finalized_at,
+        reopened_at: record.reopened_at,
+      } as FeedbackComparisonHistoryEntry
+    })
+    const comparison: FeedbackComparisonCase = {
+      status: item.status as FeedbackComparisonCase['status'],
+      c1_snapshot_id: item.c1_snapshot_id,
+      decision: item.decision as FeedbackComparisonCase['decision'],
+      revised_criterion_ratings: revisedRatings as Record<string, number | null>,
+      revision_reasons: reasons as Record<string, string>,
+      finalized_at: item.finalized_at as string | null,
+      history,
+    }
+    if (comparison.status === 'finalized') {
+      if (!comparison.decision || !validTimestamp(item.finalized_at)) throw new Error('Finalisierter C2-Vergleich benötigt Entscheidung und Zeitpunkt.')
+      if (comparison.decision === 'keep' && packet.criteria?.some(criterion => comparison.revised_criterion_ratings[criterion.criterion_id] !== snapshot.criterion_ratings[criterion.criterion_id].score)) throw new Error('Beibehaltene C2-Werte müssen den C1-Werten entsprechen.')
+      if (feedbackComparisonErrors(packet, snapshot, comparison).length) throw new Error('Finalisierter C2-Vergleich enthält ungültige Bewertungen oder Begründungen.')
+    } else if (comparison.finalized_at !== null || comparison.decision !== null) {
+      throw new Error('Offene C2-Fälle dürfen keine finale Entscheidung enthalten.')
+    }
+    cases[packetId] = comparison
+  }
+  const result: FeedbackComparisonState = {
+    stage: entry.stage,
+    historical_feedback_revealed_at: entry.historical_feedback_revealed_at as string | null,
+    cases,
+  }
+  if (result.stage === 'c2' && (!result.historical_feedback_revealed_at || !feedbackC1GateReady(session))) {
+    throw new Error('C2 kann nur nach vollständigem C1 und mit Offenlegungszeitpunkt fortgesetzt werden.')
+  }
+  return result
+}
+
 export async function validateSession(value: unknown): Promise<ExpertSession> {
   const rawSession = object(value)
   const hasEditors = Object.hasOwn(rawSession, 'pending_editors')
@@ -558,7 +853,7 @@ export async function validateSession(value: unknown): Promise<ExpertSession> {
   const isReferenceAwareConsensus = rawSession.schema_version === '1.2.0'
   const baseFields = ['kind', 'schema_version', 'evaluator_id', 'bundle_sha256', 'packets', 'drafts', 'active_task', 'active_index', 'active_criterion']
   const session = isConsensus
-    ? allowKeys(rawSession, [...baseFields, 'evaluation_mode', 'panel_id', 'consensus'], ['pending_editors', 'panel_members', ...(isReferenceAwareConsensus ? ['assessment_reference_snapshots'] : [])])
+    ? allowKeys(rawSession, [...baseFields, 'evaluation_mode', 'panel_id', 'consensus'], ['pending_editors', 'panel_members', ...(isReferenceAwareConsensus ? ['assessment_reference_snapshots', 'c1_snapshots', 'feedback_comparison'] : [])])
     : exact(rawSession, [...baseFields, ...(hasEditors ? ['pending_editors'] : [])])
   if (session.kind !== 'prebi_expert_session' || !['1.0.0', '1.1.0', '1.2.0'].includes(String(session.schema_version))) throw new Error('Unbekanntes Sitzungsformat.')
   text(session.evaluator_id)
@@ -593,12 +888,27 @@ export async function validateSession(value: unknown): Promise<ExpertSession> {
   const assessmentReferences = isReferenceAwareConsensus
     ? validateAssessmentReferences(session.assessment_reference_snapshots ?? emptyAssessmentReferences(packets), packets)
     : undefined
+  const c1Snapshots = isReferenceAwareConsensus
+    ? validateC1Snapshots(session.c1_snapshots ?? Object.fromEntries(packets.filter(packet => packet.task === 'feedback_quality').map(packet => [packet.packet_id, []])), packets)
+    : undefined
   const taskPackets = packets.filter(packet => packet.task === session.active_task)
   if (typeof session.active_task !== 'string' || !tasks.includes(session.active_task) || !Number.isInteger(session.active_index) || Number(session.active_index) < 0 || Number(session.active_index) >= taskPackets.length) throw new Error('Ungültige Fallposition.')
   if (isConsensus && session.active_task === 'feedback_implied_score') throw new Error('Der Legacy-Punktwert ist nicht Teil des Konsensworkflows.')
   const activePacket = taskPackets[Number(session.active_index)]
   if (!Number.isInteger(session.active_criterion) || Number(session.active_criterion) < 0 || Number(session.active_criterion) >= evaluationSteps(activePacket).length) throw new Error('Ungültige Kriteriumsposition.')
-  return { ...session, packets, drafts: validatedDrafts, ...(hasEditors ? { pending_editors: pendingEditors } : {}), ...(isConsensus ? { consensus } : {}), ...(isReferenceAwareConsensus ? { assessment_reference_snapshots: assessmentReferences } : {}) } as ExpertSession
+  const normalizedSession = {
+    ...session, packets, drafts: validatedDrafts,
+    ...(hasEditors ? { pending_editors: pendingEditors } : {}),
+    ...(isConsensus ? { consensus } : {}),
+    ...(isReferenceAwareConsensus ? { assessment_reference_snapshots: assessmentReferences, c1_snapshots: c1Snapshots } : {}),
+  } as ExpertSession
+  if (isReferenceAwareConsensus) {
+    normalizedSession.feedback_comparison = validateFeedbackComparison(
+      session.feedback_comparison ?? { stage: 'c1', historical_feedback_revealed_at: null, cases: {} },
+      packets, c1Snapshots!, normalizedSession,
+    )
+  }
+  return normalizedSession
 }
 
 export function sessionKey(session: Pick<ExpertSession, 'evaluator_id' | 'bundle_sha256'> & Partial<Pick<ExpertSession, 'evaluation_mode'>>) {
