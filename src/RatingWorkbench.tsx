@@ -658,6 +658,12 @@ export default function RatingWorkbench() {
   const c2Case = packet?.task === 'feedback_quality' && c2PreparedState
     ? c2PreparedState.cases[packet.packet_id]
     : undefined
+
+  useEffect(() => {
+    if (!feedbackC2Active || packet?.task !== 'feedback_quality' || !packet.human_feedback?.trim()
+      || !c2Case || c2Case.historical_feedback_revealed_at) return
+    updateCurrentC2Case(comparison => ({ ...comparison, historical_feedback_revealed_at: new Date().toISOString() }))
+  }, [feedbackC2Active, packet?.packet_id, packet?.task, packet?.human_feedback, c2Case?.historical_feedback_revealed_at])
   function toggleReferenceEvidence(id: string) {
     if (!referenceDimension || !draft || !referenceAnswer) return
     const evidence = new Set(referenceAnswer.evidence_segment_ids)
@@ -691,7 +697,7 @@ export default function RatingWorkbench() {
         onConfirm: consensusFinalized && taskBReference.current && (taskBReference.state === 'changed' || taskBReference.state === 'available')
           ? confirmCurrentAssessmentReference
           : undefined,
-      } : undefined} historicalFeedback={feedbackC2Active && packet.task === 'feedback_quality' && packet.human_feedback?.trim() ? packet.human_feedback : undefined}><section className={`task-panel${feedbackC2Active && packet.task === 'feedback_quality' ? ' c2-panel' : ''}`} aria-label={feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}><div className="panel-title"><span>{feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}</span></div>
+      } : undefined} historicalFeedback={feedbackC2Active && packet.task === 'feedback_quality' && packet.human_feedback?.trim() && c2Case?.historical_feedback_revealed_at ? packet.human_feedback : undefined}><section className={`task-panel${feedbackC2Active && packet.task === 'feedback_quality' ? ' c2-panel' : ''}`} aria-label={feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}><div className="panel-title"><span>{feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}</span></div>
         {feedbackC2Active && packet.task === 'feedback_quality' ? packet.human_feedback?.trim() && c2Snapshot && c2Case
           ? <FeedbackComparisonControls packet={packet} snapshot={c2Snapshot} comparison={c2Case} onDecision={decideCurrentC2} onScoreChange={changeCurrentC2Score} onReasonChange={changeCurrentC2Reason} onFinalize={finalizeCurrentC2} onReopen={reopenCurrentC2} />
           : <div className="comparison-unavailable" role="status"><strong>Vergleich noch nicht verfügbar</strong><p>Für diesen Fall liegt kein historisches Feedback vor.</p></div>

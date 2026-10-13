@@ -141,6 +141,16 @@ reference-rating exports identify this resolution as
 `reflection-reference-0-3-step-0.5-v1`; existing packet and protocol identifiers
 are preserved.
 
+Packets may include an opaque pseudonymous `reflection_id` shared by Task A
+reference-score and Task B assessment-quality packets for the same reflection.
+Task B shows read-only finalized Task A scores only when that identifier resolves
+to exactly one Task A case and linked packets have identical reflection content
+and rubric versions. Packets without the field remain importable and are never
+matched by packet order or text. Task B finalization stores the reference snapshot
+used; reopening or revising Task A makes that snapshot stale until the panel
+explicitly reviews the current reference. The original Task B ratings and used
+snapshot remain unchanged.
+
 ## Expert Consensus Sessions
 
 Choose **Gemeinsame Konsensbewertung** before importing a packet bundle to create
@@ -150,12 +160,36 @@ case consensus status. A case must have all required answers before the panel ca
 explicitly confirm consensus; flagged and unfinished cases remain in the session
 export and are excluded from the finalized research export.
 
-Consensus sessions use session schema `1.1.0` and a separate `::consensus`
-storage namespace. Their research export uses `ratings-consensus.json` schema
-`1.1.0`, preserves the task-specific response under `response`, and adds panel
-identity plus case-level finalization metadata. Existing individual sessions and
-their `1.0.0` `ratings-evaluation.json` export remain unchanged. The legacy
-feedback-implied-score task is not part of consensus sessions.
+New consensus sessions use additive session schema `1.2.0` and a separate
+`::consensus` storage namespace. Existing `1.0.0` individual sessions and
+`1.1.0` consensus sessions remain importable. Older consensus sessions receive
+empty reference/C1/C2 metadata on installation; no Task A relationship is
+guessed and historical feedback stays locked until newly finalized Task C cases
+have immutable C1 snapshots.
+
+Task B reference scores are read-only and appear only for an unambiguous
+`reflection_id` link to a finalized Task A consensus. The Task B research record
+contains the linked Task A packet, finalization time, scores, and any explicit
+later reference review. If Task A is reopened or revised, the original Task B
+ratings and reference snapshot are preserved and the UI marks the reference as
+changed or unavailable.
+
+Task C starts in **C1 · independent evaluation**; historical lecturer feedback is
+not rendered in the task display. The **Historischer Vergleich** entry is enabled
+only after every feedback-quality case in the session has a finalized C1 snapshot.
+In C2, the panel may keep C1 or revise one or more criterion scores. Each changed
+rating requires a reason; completing or reopening C2 does not alter its C1
+snapshot. Cases without historical feedback remain unavailable for comparison.
+Reopening C1 relocks the session gate, and any later C2 decision must reference
+the new C1 snapshot.
+
+New consensus research exports use `ratings-consensus.json` schema `1.2.0` and
+retain the original C1 response, C1 snapshot ID/content, per-case historical
+feedback reveal time, C2 completion/decision, revised scores and reasons, and C2
+history as distinct fields. Task B exports retain the exact Task A reference
+snapshot used and any later explicit review. Existing `1.1.0` consensus exports
+and individual `1.0.0` `ratings-evaluation.json` exports keep their original
+formats. The legacy feedback-implied-score task remains outside consensus mode.
 
 ## Tests
 
@@ -188,7 +222,10 @@ The consensus test derives six blinded cases from the synthetic evaluation
 bundle, with two cases each for reflection reference scoring, assessment
 quality, and feedback quality. It exercises consensus packet validation,
 case filters, flagging, finalization, reopening, restoration, and finalized-only
-export without including the legacy feedback-implied-score task.
+export without including the legacy feedback-implied-score task. Additional
+tests cover optional cross-task identity, stale Task A references, C1-only legacy
+session imports, the all-case C2 gate, revision reasons, and independent C1/C2
+research exports.
 
 ```bash
 npm test

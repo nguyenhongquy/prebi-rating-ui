@@ -145,11 +145,18 @@ export function researchExportPackets(session: ExpertSession): Packet[] {
 
 export function consensusResearchExport(session: ExpertSession, createRatingId: () => string = () => crypto.randomUUID()) {
   if (session.evaluation_mode !== 'expert_consensus' || !session.panel_id) throw new Error('Konsensmetadaten fehlen.')
+  const schemaVersion = session.schema_version === '1.2.0' ? '1.2.0' : '1.1.0'
   const ratings = researchExportPackets(session).map(packet => {
     const consensus = session.consensus?.[packet.packet_id]
     if (!consensus?.finalized_at || consensus.status !== 'finalized') throw new Error('Nicht finalisierte Fälle dürfen nicht exportiert werden.')
+    const c1Snapshot = packet.task === 'feedback_quality' ? latestC1Snapshot(packet, session) : null
+    const comparisonState = packet.task === 'feedback_quality' ? session.feedback_comparison : undefined
+    const storedComparison = packet.task === 'feedback_quality' ? comparisonState?.cases[packet.packet_id] : undefined
+    const currentComparison = c1Snapshot && storedComparison?.c1_snapshot_id === c1Snapshot.snapshot_id
+      ? storedComparison
+      : undefined
     return {
-      schema_version: '1.1.0',
+      schema_version: schemaVersion,
       rating_id: createRatingId(),
       packet_id: packet.packet_id,
       task: packet.task,
@@ -167,10 +174,31 @@ export function consensusResearchExport(session: ExpertSession, createRatingId: 
       ...(packet.task === 'assessment_quality' && session.assessment_reference_snapshots?.[packet.packet_id]
         ? { assessment_reference: session.assessment_reference_snapshots[packet.packet_id] }
         : {}),
+      ...(schemaVersion === '1.2.0' && packet.task === 'feedback_quality' ? {
+        c1_snapshot_id: c1Snapshot?.snapshot_id ?? null,
+        c1_snapshot: c1Snapshot,
+        feedback_comparison: {
+          historical_feedback_revealed: Boolean(packet.human_feedback?.trim() && currentComparison?.historical_feedback_revealed_at),
+          historical_feedback_revealed_at: packet.human_feedback?.trim()
+            ? currentComparison?.historical_feedback_revealed_at ?? null
+            : null,
+          completed: currentComparison?.status === 'finalized',
+          decision: currentComparison?.status === 'finalized' ? currentComparison.decision : null,
+          revised_criterion_ratings: currentComparison?.status === 'finalized' && currentComparison.decision === 'revised'
+            ? currentComparison.revised_criterion_ratings
+            : null,
+          revision_reasons: currentComparison?.status === 'finalized' && currentComparison.decision === 'revised'
+            ? currentComparison.revision_reasons
+            : {},
+          finalized_at: currentComparison?.status === 'finalized' ? currentComparison.finalized_at : null,
+          case: currentComparison ?? null,
+          history: storedComparison?.history ?? [],
+        },
+      } : {}),
     }
   })
   return {
-    schema_version: '1.1.0',
+    schema_version: schemaVersion,
     evaluation_mode: 'expert_consensus',
     panel_id: session.panel_id,
     ...(session.panel_members ? { panel_members: session.panel_members } : {}),
@@ -457,6 +485,7 @@ export function ensureFeedbackComparisonCase(
   if (existing?.status === 'finalized' && existing.decision && existing.finalized_at) {
     history.push({
       c1_snapshot_id: existing.c1_snapshot_id,
+      historical_feedback_revealed_at: existing.historical_feedback_revealed_at,
       decision: existing.decision,
       revised_criterion_ratings: { ...existing.revised_criterion_ratings },
       revision_reasons: { ...existing.revision_reasons },
@@ -474,6 +503,7 @@ export function ensureFeedbackComparisonCase(
       [packet.packet_id]: {
         status: 'in_progress',
         c1_snapshot_id: snapshot.snapshot_id,
+        historical_feedback_revealed_at: null,
         decision: null,
         revised_criterion_ratings: revisedCriterionRatings,
         revision_reasons: {},
@@ -534,6 +564,7 @@ export function reopenFeedbackComparison(
   if (!validTimestamp(reopenedAt)) throw new Error('Ungültiger Zeitpunkt für das erneute Öffnen.')
   const historyEntry: FeedbackComparisonHistoryEntry = {
     c1_snapshot_id: comparison.c1_snapshot_id,
+    historical_feedback_revealed_at: comparison.historical_feedback_revealed_at,
     decision: comparison.decision,
     revised_criterion_ratings: { ...comparison.revised_criterion_ratings },
     revision_reasons: { ...comparison.revision_reasons },
@@ -788,12 +819,14 @@ function validateFeedbackComparison(value: unknown, packets: Packet[], snapshots
   for (const [packetId, value] of Object.entries(records)) {
     const packet = packetById.get(packetId)
     if (!packet) throw new Error('C2-Vergleich verweist auf keinen Feedbackfall.')
-    const item = exact(value, ['status', 'c1_snapshot_id', 'decision', 'revised_criterion_ratings', 'revision_reasons', 'finalized_at', 'history'])
+    const item = exact(value, ['status', 'c1_snapshot_id', 'historical_feedback_revealed_at', 'decision', 'revised_criterion_ratings', 'revision_reasons', 'finalized_at', 'history'])
     text(item.status)
     text(item.c1_snapshot_id)
     if (!['in_progress', 'finalized'].includes(item.status)) throw new Error('Ungültiger C2-Status.')
     const snapshot = (snapshots[packetId] ?? []).find(candidate => candidate.snapshot_id === item.c1_snapshot_id)
     if (!snapshot) throw new Error('C2 muss auf einen gespeicherten C1-Snapshot verweisen.')
+    if (item.historical_feedback_revealed_at !== null && !validTimestamp(item.historical_feedback_revealed_at)) throw new Error('Ungültiger Offenlegungszeitpunkt für historisches Feedback.')
+    if (item.historical_feedback_revealed_at !== null && !packet.human_feedback?.trim()) throw new Error('Historisches Feedback ohne Quelle darf nicht als offengelegt markiert werden.')
     if (item.decision !== null && item.decision !== 'keep' && item.decision !== 'revised') throw new Error('Ungültige C2-Entscheidung.')
     if (!item.revised_criterion_ratings || typeof item.revised_criterion_ratings !== 'object' || Array.isArray(item.revised_criterion_ratings)) throw new Error('Ungültige C2-Kriterienbewertungen.')
     const revisedRatings = object(item.revised_criterion_ratings)
@@ -803,13 +836,15 @@ function validateFeedbackComparison(value: unknown, packets: Packet[], snapshots
     Object.values(reasons).forEach(text)
     if (!Array.isArray(item.history)) throw new Error('Ungültiger C2-Verlauf.')
     const history = item.history.map(value => {
-      const record = exact(value, ['c1_snapshot_id', 'decision', 'revised_criterion_ratings', 'revision_reasons', 'finalized_at', 'reopened_at'])
+      const record = exact(value, ['c1_snapshot_id', 'historical_feedback_revealed_at', 'decision', 'revised_criterion_ratings', 'revision_reasons', 'finalized_at', 'reopened_at'])
       text(record.c1_snapshot_id)
       if (!(snapshots[packetId] ?? []).some(candidate => candidate.snapshot_id === record.c1_snapshot_id)) throw new Error('C2-Verlauf verweist auf keinen C1-Snapshot.')
+      if (record.historical_feedback_revealed_at !== null && !validTimestamp(record.historical_feedback_revealed_at)) throw new Error('Ungültiger Offenlegungszeitpunkt in der C2-Historie.')
       if (record.decision !== 'keep' && record.decision !== 'revised') throw new Error('Ungültige frühere C2-Entscheidung.')
       if (!validTimestamp(record.finalized_at) || !validTimestamp(record.reopened_at)) throw new Error('Ungültige C2-Verlaufszeitpunkte.')
       return {
         c1_snapshot_id: record.c1_snapshot_id,
+        historical_feedback_revealed_at: record.historical_feedback_revealed_at as string | null,
         decision: record.decision,
         revised_criterion_ratings: object(record.revised_criterion_ratings) as Record<string, number | null>,
         revision_reasons: object(record.revision_reasons) as Record<string, string>,
@@ -820,6 +855,7 @@ function validateFeedbackComparison(value: unknown, packets: Packet[], snapshots
     const comparison: FeedbackComparisonCase = {
       status: item.status as FeedbackComparisonCase['status'],
       c1_snapshot_id: item.c1_snapshot_id,
+      historical_feedback_revealed_at: item.historical_feedback_revealed_at as string | null,
       decision: item.decision as FeedbackComparisonCase['decision'],
       revised_criterion_ratings: revisedRatings as Record<string, number | null>,
       revision_reasons: reasons as Record<string, string>,

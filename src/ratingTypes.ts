@@ -35,6 +35,7 @@ export type C1Snapshot = {
 }
 export type FeedbackComparisonHistoryEntry = {
   c1_snapshot_id: string
+  historical_feedback_revealed_at: string | null
   decision: 'keep' | 'revised'
   revised_criterion_ratings: Record<string, number | null>
   revision_reasons: Record<string, string>
@@ -44,6 +45,7 @@ export type FeedbackComparisonHistoryEntry = {
 export type FeedbackComparisonCase = {
   status: 'in_progress' | 'finalized'
   c1_snapshot_id: string
+  historical_feedback_revealed_at: string | null
   decision: 'keep' | 'revised' | null
   revised_criterion_ratings: Record<string, number | null>
   revision_reasons: Record<string, string>

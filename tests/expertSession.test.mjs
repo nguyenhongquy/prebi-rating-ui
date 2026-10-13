@@ -148,6 +148,7 @@ test('Task B resolves only a unique finalized linked reference and preserves its
   )
   assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'current')
   const exported = consensusResearchExport(session, () => 'linked-rating')
+  assert.equal(exported.schema_version, '1.2.0')
   const exportedAssessment = exported.ratings.find(rating => rating.packet_id === linkedAssessment.packet_id)
   assert.equal(exportedAssessment.assessment_reference.used_snapshot.packet_id, linkedReference.packet_id)
   assert.deepEqual(exportedAssessment.assessment_reference.used_snapshot.scores, resolved.scores)
@@ -166,6 +167,17 @@ test('Task B resolves only a unique finalized linked reference and preserves its
   )
   assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'changed')
   assert.deepEqual(captureAssessmentReference(linkedAssessment, session).used_snapshot.scores, resolved.scores)
+  const changedReference = finalizedAssessmentReference(linkedAssessment, session)
+  session.assessment_reference_snapshots[linkedAssessment.packet_id] = {
+    ...session.assessment_reference_snapshots[linkedAssessment.packet_id],
+    reviewed_snapshot: changedReference,
+    reviewed_at: '2026-10-13T11:05:00Z',
+  }
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'reviewed')
+  const reviewedExport = consensusResearchExport(session, () => 'reviewed-rating')
+  const reviewedAssessment = reviewedExport.ratings.find(rating => rating.packet_id === linkedAssessment.packet_id)
+  assert.deepEqual(reviewedAssessment.assessment_reference.used_snapshot.scores, resolved.scores)
+  assert.deepEqual(reviewedAssessment.assessment_reference.reviewed_snapshot.scores, changedReference.scores)
 
   const duplicateReference = { ...linkedReference, packet_id: 'second-linked-reference' }
   const ambiguous = { ...session, packets: [...linkedPackets, duplicateReference] }
@@ -204,6 +216,7 @@ test('C2 remains locked until every feedback C1 snapshot is finalized and persis
   assert.deepEqual(latestC1Snapshot(feedbackPacket, session), c1)
 
   session.feedback_comparison = enterFeedbackComparison(session, '2026-10-13T12:10:00Z')
+  session.feedback_comparison.cases[feedbackPacket.packet_id].historical_feedback_revealed_at = '2026-10-13T12:11:00Z'
   assert.equal(historicalFeedbackVisible(session), true)
   let c2 = session.feedback_comparison.cases[feedbackPacket.packet_id]
   assert.ok(c2)
@@ -223,6 +236,15 @@ test('C2 remains locked until every feedback C1 snapshot is finalized and persis
   assert.deepEqual(restored.c1_snapshots[feedbackPacket.packet_id][0], c1)
   assert.deepEqual(restored.feedback_comparison.cases[feedbackPacket.packet_id], c2)
   assert.deepEqual(feedbackComparisonErrors(feedbackPacket, c1, c2), [])
+  const exported = consensusResearchExport(restored, () => 'c2-rating-id')
+  assert.equal(exported.schema_version, '1.2.0')
+  const feedbackExport = exported.ratings.find(rating => rating.packet_id === feedbackPacket.packet_id)
+  assert.deepEqual(feedbackExport.response.criterion_ratings, c1.criterion_ratings)
+  assert.equal(feedbackExport.c1_snapshot_id, c1.snapshot_id)
+  assert.equal(feedbackExport.feedback_comparison.historical_feedback_revealed, true)
+  assert.equal(feedbackExport.feedback_comparison.decision, 'revised')
+  assert.equal(feedbackExport.feedback_comparison.revised_criterion_ratings[changedCriterionId], changedScore)
+  assert.equal(feedbackExport.feedback_comparison.revision_reasons[changedCriterionId], c2.revision_reasons[changedCriterionId])
 
   const reopened = reopenFeedbackComparison(c2, '2026-10-13T12:25:00Z')
   assert.equal(reopened.status, 'in_progress')
