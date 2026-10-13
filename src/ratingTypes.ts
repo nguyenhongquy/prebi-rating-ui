@@ -9,6 +9,16 @@ export type ConsensusRecord = {
   finalized_by: string | null
   finalization_history: ConsensusHistoryEntry[]
 }
+export type AssessmentReferenceSnapshot = {
+  packet_id: string
+  finalized_at: string
+  scores: Record<string, number>
+}
+export type AssessmentReferenceRecord = {
+  used_snapshot: AssessmentReferenceSnapshot | null
+  reviewed_snapshot: AssessmentReferenceSnapshot | null
+  reviewed_at: string | null
+}
 export type Criterion = { criterion_id: string; label: string; description: string; anchors?: Record<string, string> }
 export type Segment = { segment_id: string; order: number; text: string }
 export type SegmentAnnotation = { segment_id: string; dimension_id: string; skill_label?: string; level?: string }
@@ -41,6 +51,7 @@ export type Draft = {
 }
 export type Packet = {
   packet_id: string
+  reflection_id?: string
   task: RatingTask
   packet_version: string
   protocol_id: string

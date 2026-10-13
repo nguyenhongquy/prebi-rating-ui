@@ -18,12 +18,13 @@ try {
 } finally {
   rmSync(directory, { recursive: true, force: true })
 }
-const { bundleHash, validateSession, validateDraft, validatePackets, assertSourcesMatch, draftFromResponse, checkPacketHashes, sessionKey, expertCaseState, legacyDraft, emptyConsensus, consensusCaseState, consensusAnswerErrors, finalizeConsensus, flagConsensus, resumeConsensus, reopenConsensus, researchExportPackets, consensusResearchExport, filteredConsensusIndexes, assertConsensusBlinding } = helpers
+const { bundleHash, validateSession, validateDraft, validatePackets, assertSourcesMatch, draftFromResponse, checkPacketHashes, sessionKey, expertCaseState, legacyDraft, emptyConsensus, emptyAssessmentReferences, captureAssessmentReference, finalizedAssessmentReference, assessmentReferenceState, consensusCaseState, consensusAnswerErrors, finalizeConsensus, flagConsensus, resumeConsensus, reopenConsensus, researchExportPackets, consensusResearchExport, filteredConsensusIndexes, assertConsensusBlinding } = helpers
 const { emptyDraft, caseState, responseForDraft, answerError, REFERENCE_SCORE_SCALE } = validation
 const packets = validatePackets(JSON.parse(readFileSync(new URL('../public/examples/synthetic-evaluation-bundle.json', import.meta.url), 'utf8')).packets)
 const reference = packets.find(packet => packet.task === 'reflection_reference_score')
 const implied = packets.find(packet => packet.task === 'feedback_implied_score')
 const quality = packets.find(packet => packet.task === 'feedback_quality')
+const assessment = packets.find(packet => packet.task === 'assessment_quality')
 const fresh = async () => ({ kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: 'EXPERT', bundle_sha256: await bundleHash(packets), packets, drafts: Object.fromEntries(packets.map(packet => [packet.packet_id, emptyDraft(packet)])), active_task: packets[0].task, active_index: 0, active_criterion: 0 })
 const freshConsensus = async () => {
   const session = await fresh()
@@ -84,6 +85,80 @@ test('legacy integer anchor metadata stays compatible while incompatible declare
   assert.equal(validatePackets([{ ...reference, scale: legacyScale }])[0].scale.step, undefined)
   assert.throws(() => validatePackets([{ ...reference, scale: { ...legacyScale, step: 1 } }]), /inkompatible Punktwertskala/)
   assert.throws(() => validatePackets([{ ...reference, scale: { ...legacyScale, id: 'integer-only-v1' } }]), /inkompatible Punktwertskala/)
+})
+
+test('optional reflection IDs link only identical reflection and rubric sources', () => {
+  const linked = validatePackets([
+    { ...reference, reflection_id: 'reflection-opaque-001' },
+    { ...assessment, reflection: structuredClone(reference.reflection), rubric: { ...assessment.rubric, version: reference.rubric.version }, reflection_id: 'reflection-opaque-001' },
+  ])
+  assert.deepEqual(linked.map(packet => packet.reflection_id), ['reflection-opaque-001', 'reflection-opaque-001'])
+  assert.equal(validatePackets([reference])[0].reflection_id, undefined)
+  assert.throws(() => validatePackets([
+    { ...reference, reflection_id: 'reflection-opaque-002' },
+    { ...assessment, reflection_id: 'reflection-opaque-002', reflection: { segments: [...assessment.reflection.segments, { segment_id: 'extra', order: 999, text: 'Different source.' }] }, displayed_reflection_sha256: undefined },
+  ]), /identische Reflexionsinhalte/)
+  assert.throws(() => validatePackets([
+    { ...reference, reflection_id: 'reflection-opaque-003' },
+    { ...assessment, reflection_id: 'reflection-opaque-003', rubric: { ...assessment.rubric, version: 'different-version' } },
+  ]), /kompatible Rubrikversionen/)
+})
+
+test('Task B resolves only a unique finalized linked reference and preserves its snapshot', async () => {
+  const linkedPackets = validatePackets([
+    { ...reference, packet_id: 'linked-reference', reflection_id: 'reflection-opaque-004' },
+    { ...assessment, packet_id: 'linked-assessment', reflection: structuredClone(reference.reflection), rubric: { ...assessment.rubric, version: reference.rubric.version }, reflection_id: 'reflection-opaque-004' },
+  ])
+  const linkedReference = linkedPackets[0]
+  const linkedAssessment = linkedPackets[1]
+  const session = {
+    kind: 'prebi_expert_session', schema_version: '1.2.0', evaluator_id: 'linked-panel',
+    evaluation_mode: 'expert_consensus', panel_id: 'linked-panel', bundle_sha256: await bundleHash(linkedPackets),
+    packets: linkedPackets,
+    drafts: Object.fromEntries(linkedPackets.map(packet => [packet.packet_id, emptyDraft(packet)])),
+    pending_editors: {}, consensus: emptyConsensus(linkedPackets),
+    assessment_reference_snapshots: emptyAssessmentReferences(linkedPackets),
+    active_task: 'reflection_reference_score', active_index: 0, active_criterion: 0,
+  }
+  assert.equal(finalizedAssessmentReference(linkedAssessment, session), null)
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'unavailable')
+  for (const [index, dimension] of linkedReference.score_dimensions.entries()) {
+    session.drafts[linkedReference.packet_id].referenceAnswers[dimension.dimension_id].score = index + 0.5
+  }
+  session.consensus[linkedReference.packet_id] = finalizeConsensus(
+    session.consensus[linkedReference.packet_id], linkedReference,
+    session.drafts[linkedReference.packet_id], session.panel_id, '2026-10-13T10:00:00Z',
+  )
+  const resolved = finalizedAssessmentReference(linkedAssessment, session)
+  assert.deepEqual(resolved.scores, { SW: 0.5, UA: 1.5, HA: 2.5 })
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'available')
+  for (const criterion of linkedAssessment.criteria) session.drafts[linkedAssessment.packet_id].criterionRatings[criterion.criterion_id].score = linkedAssessment.scale.min
+  session.assessment_reference_snapshots[linkedAssessment.packet_id] = captureAssessmentReference(linkedAssessment, session)
+  session.consensus[linkedAssessment.packet_id] = finalizeConsensus(
+    session.consensus[linkedAssessment.packet_id], linkedAssessment,
+    session.drafts[linkedAssessment.packet_id], session.panel_id, '2026-10-13T10:10:00Z',
+  )
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'current')
+  const exported = consensusResearchExport(session, () => 'linked-rating')
+  const exportedAssessment = exported.ratings.find(rating => rating.packet_id === linkedAssessment.packet_id)
+  assert.equal(exportedAssessment.assessment_reference.used_snapshot.packet_id, linkedReference.packet_id)
+  assert.deepEqual(exportedAssessment.assessment_reference.used_snapshot.scores, resolved.scores)
+  assert.deepEqual(await validateSession(JSON.parse(JSON.stringify(session))), session)
+
+  session.consensus[linkedReference.packet_id] = reopenConsensus(session.consensus[linkedReference.packet_id])
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'changed')
+  assert.equal(assessmentReferenceState(linkedAssessment, session).current, null)
+  for (const dimension of linkedReference.score_dimensions) session.drafts[linkedReference.packet_id].referenceAnswers[dimension.dimension_id].score = 3
+  session.consensus[linkedReference.packet_id] = finalizeConsensus(
+    session.consensus[linkedReference.packet_id], linkedReference,
+    session.drafts[linkedReference.packet_id], session.panel_id, '2026-10-13T11:00:00Z',
+  )
+  assert.equal(assessmentReferenceState(linkedAssessment, session).state, 'changed')
+  assert.deepEqual(captureAssessmentReference(linkedAssessment, session).used_snapshot.scores, resolved.scores)
+
+  const duplicateReference = { ...linkedReference, packet_id: 'second-linked-reference' }
+  const ambiguous = { ...session, packets: [...linkedPackets, duplicateReference] }
+  assert.equal(finalizedAssessmentReference(linkedAssessment, ambiguous), null)
 })
 
 test('reference drafts distinguish unanswered from score zero and validate rubric and evidence IDs', async () => {

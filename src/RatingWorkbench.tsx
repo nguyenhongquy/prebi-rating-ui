@@ -16,7 +16,7 @@ import RatingProgress from './RatingProgress'
 import PacketNavigator from './PacketNavigator'
 import { readSession, writeSession, listSessions } from './localSessions'
 import { WorkflowHelp, ResumePrompt, ExportSummary, PersistenceStatus } from './WorkflowSupport'
-import { assertConsensusBlinding, assertSourcesMatch, bundleHash, checkPacketHashes, consensusAnswerErrors, consensusCaseState, consensusResearchExport, draftFromResponse, emptyConsensus, expertCaseState, finalizeConsensus, flagConsensus, legacyDraft, reopenConsensus, researchExportPackets, resumeConsensus, sessionKey, validateDraft, validatePackets, validateSession, type ExpertSession, type PendingEditor } from './expertSession'
+import { assessmentReferenceState, assertConsensusBlinding, assertSourcesMatch, bundleHash, captureAssessmentReference, checkPacketHashes, consensusAnswerErrors, consensusCaseState, consensusResearchExport, draftFromResponse, emptyAssessmentReferences, emptyConsensus, expertCaseState, finalizedAssessmentReference, finalizeConsensus, flagConsensus, legacyDraft, reopenConsensus, researchExportPackets, resumeConsensus, sessionKey, validateDraft, validatePackets, validateSession, type ExpertSession, type PendingEditor } from './expertSession'
 type SavedRating = {
   schema_version: '1.0.0' | '1.1.0'
   rating_id: string
@@ -98,7 +98,7 @@ function checkLegacySources(packets: Packet[]) {
 }
 
 function freshSession(session: ExpertSession): ExpertSession {
-  return { ...session, drafts: Object.fromEntries(session.packets.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, ...(session.evaluation_mode === 'expert_consensus' ? { consensus: emptyConsensus(session.packets) } : {}), active_task: firstTask(session.packets, session.evaluation_mode === 'expert_consensus'), active_index: 0, active_criterion: 0 }
+  return { ...session, drafts: Object.fromEntries(session.packets.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, ...(session.evaluation_mode === 'expert_consensus' ? { consensus: emptyConsensus(session.packets), schema_version: '1.2.0' as const, assessment_reference_snapshots: emptyAssessmentReferences(session.packets) } : {}), active_task: firstTask(session.packets, session.evaluation_mode === 'expert_consensus'), active_index: 0, active_criterion: 0 }
 }
 
 type PendingSession = {
@@ -327,9 +327,31 @@ export default function RatingWorkbench() {
     }
     setSession(current => {
       if (!current?.consensus || !current.panel_id) return current
-      return { ...current, consensus: { ...current.consensus, [packet.packet_id]: finalizeConsensus(current.consensus[packet.packet_id], packet, current.drafts[packet.packet_id], current.panel_id) } }
+      const consensus = finalizeConsensus(current.consensus[packet.packet_id], packet, current.drafts[packet.packet_id], current.panel_id)
+      const assessmentReferences = { ...(current.assessment_reference_snapshots ?? emptyAssessmentReferences(current.packets)) }
+      if (packet.task === 'assessment_quality') {
+        assessmentReferences[packet.packet_id] = captureAssessmentReference(packet, current)
+      }
+      return {
+        ...current,
+        consensus: { ...current.consensus, [packet.packet_id]: consensus },
+        ...(current.schema_version === '1.2.0' ? { assessment_reference_snapshots: assessmentReferences } : {}),
+      }
     })
     setError('')
+  }
+
+  function confirmCurrentAssessmentReference() {
+    if (!packet || packet.task !== 'assessment_quality' || !session || !consensusFinalized) return
+    const currentSnapshot = finalizedAssessmentReference(packet, session)
+    if (!currentSnapshot) return
+    setSession(current => {
+      if (!current) return current
+      const records = { ...(current.assessment_reference_snapshots ?? emptyAssessmentReferences(current.packets)) }
+      const previous = records[packet.packet_id] ?? { used_snapshot: null, reviewed_snapshot: null, reviewed_at: null }
+      records[packet.packet_id] = { ...previous, reviewed_snapshot: currentSnapshot, reviewed_at: new Date().toISOString() }
+      return { ...current, assessment_reference_snapshots: records }
+    })
   }
 
   function reopenCurrentCase() {
@@ -343,6 +365,9 @@ export default function RatingWorkbench() {
 
   async function installSession(chosen: ExpertSession, fingerprint: string | undefined) {
     await writeQueue.current
+    if (chosen.evaluation_mode === 'expert_consensus' && chosen.schema_version === '1.1.0') {
+      chosen = { ...chosen, schema_version: '1.2.0', assessment_reference_snapshots: emptyAssessmentReferences(chosen.packets) }
+    }
     const existing = await readSession<unknown>(sessionKey(chosen))
     const actual = existing === undefined ? undefined : canonicalJson(existing)
     if (actual !== fingerprint) {
@@ -449,7 +474,7 @@ export default function RatingWorkbench() {
         ;[ordered[index], ordered[next]] = [ordered[next], ordered[index]]
       }
       const incoming: ExpertSession = evaluationMode === 'expert_consensus'
-        ? { kind: 'prebi_expert_session', schema_version: '1.1.0', evaluator_id: activeIdentity, evaluation_mode: 'expert_consensus', panel_id: activeIdentity, bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, consensus: emptyConsensus(ordered), active_task: firstTask(ordered, true), active_index: 0, active_criterion: 0 }
+        ? { kind: 'prebi_expert_session', schema_version: '1.2.0', evaluator_id: activeIdentity, evaluation_mode: 'expert_consensus', panel_id: activeIdentity, bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, consensus: emptyConsensus(ordered), assessment_reference_snapshots: emptyAssessmentReferences(ordered), active_task: firstTask(ordered, true), active_index: 0, active_criterion: 0 }
         : { kind: 'prebi_expert_session', schema_version: '1.0.0', evaluator_id: activeIdentity, bundle_sha256: hash, packets: ordered, drafts: Object.fromEntries(ordered.map(packet => [packet.packet_id, emptyDraft(packet)])), pending_editors: {}, active_task: firstTask(ordered), active_index: 0, active_criterion: 0 }
       await prepareSession(evaluationMode === 'expert_consensus' ? await validateSession(incoming) : incoming, false)
     })
@@ -537,7 +562,9 @@ export default function RatingWorkbench() {
   } : undefined
   const referenceDimension = packet?.task === 'reflection_reference_score' ? packet.score_dimensions?.[criterionIndex] : undefined
   const referenceAnswer = referenceDimension && draft ? draft.referenceAnswers[referenceDimension.dimension_id] : undefined
-
+  const taskBReference = packet?.task === 'assessment_quality' && session && consensusMode
+    ? assessmentReferenceState(packet, session)
+    : undefined
   function toggleReferenceEvidence(id: string) {
     if (!referenceDimension || !draft || !referenceAnswer) return
     const evidence = new Set(referenceAnswer.evidence_segment_ids)
@@ -565,7 +592,13 @@ export default function RatingWorkbench() {
       {exportOpen && <ExportSummary total={consensusMode ? consensusPacketStates.length : packets.length} complete={completeCount} started={startedCount - completeCount} consensus={consensusSummary} onExport={exportSession} onClose={() => setExportOpen(false)} />}
       {packet && draft && <div className="rating-layout"><PacketNavigator label={TASK_LABELS[taskFilter]} states={packetStates} activeIndex={packetIndex} onNavigate={navigatePacket} consensusMode={consensusMode} consensusStatuses={consensusMode ? consensusStates : undefined}>
         <details className="protocol-details"><summary>Bewertungsleitfaden</summary><pre>{packet.human_protocol}</pre></details><details className="rubric-details"><summary>Bewertungsraster</summary>{packet.rubric.dimensions.map(dimension => <div className="rubric-dimension" key={dimension.dimension_id}><strong>{dimension.dimension_id} · {dimension.name}</strong><p>{dimension.description}</p><dl>{Object.entries(dimension.bands).map(([band, description]) => <div key={band}><dt>{band}</dt><dd>{description}</dd></div>)}</dl></div>)}</details>
-      </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} referenceEvidence={referenceDimension && referenceAnswer && !consensusFinalized ? { ids: referenceAnswer.evidence_segment_ids, label: referenceDimension.label, onToggle: toggleReferenceEvidence } : undefined}><section className="task-panel" aria-label="Ihre Bewertung"><div className="panel-title"><span>Ihre Bewertung</span></div>
+      </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} referenceEvidence={referenceDimension && referenceAnswer && !consensusFinalized ? { ids: referenceAnswer.evidence_segment_ids, label: referenceDimension.label, onToggle: toggleReferenceEvidence } : undefined} assessmentReference={taskBReference ? {
+        state: taskBReference.state,
+        scores: taskBReference.current?.scores ?? null,
+        onConfirm: consensusFinalized && taskBReference.current && (taskBReference.state === 'changed' || taskBReference.state === 'available')
+          ? confirmCurrentAssessmentReference
+          : undefined,
+      } : undefined}><section className="task-panel" aria-label="Ihre Bewertung"><div className="panel-title"><span>Ihre Bewertung</span></div>
         {packet.task === 'feedback_implied_score' ? <p className="draft-progress">{steps.filter((_, index) => !answerError(packet, draft, index)).length} / {steps.length} Dimensionen vollständig</p> : <RatingProgress packet={packet} draft={draft} activeIndex={criterionIndex} onNavigate={navigateCriterion} />}
         {packet.task !== 'feedback_implied_score' && <p className="criterion-position">{packet.task === 'reflection_reference_score' ? 'Dimension' : 'Kriterium'} {criterionIndex + 1} von {steps.length}</p>}
         <fieldset className="rating-edit-fieldset" disabled={consensusFinalized}>{packet.task === 'feedback_implied_score' ? <ScoreCoding packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} addSpanComment={addSpanComment} /> : packet.task === 'reflection_reference_score' ? <ReferenceRating key={`${packet.packet_id}-${criterionIndex}`} packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} /> : <QualityRating packet={packet} draft={draft} activeIndex={criterionIndex} updateDraft={updateDraft} selectedSpan={selectedSpan} spanComment={spanComment} setSpanComment={editSpanComment} spanTags={spanTags} setSpanTags={editSpanTags} addSpanComment={addSpanComment} />}</fieldset>

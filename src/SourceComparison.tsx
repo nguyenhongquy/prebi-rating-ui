@@ -83,13 +83,22 @@ export function ReflectionViewer({ segments, annotations = [], dimensionLabels =
   </section>
 }
 
-export function OutputViewer({ packet, onSelection, evidence, selectedItem, onShowItem }: { packet: Packet; onSelection: FeedbackSelectionHandler; evidence: EvidenceInteraction; selectedItem?: string | null; onShowItem?: (key: string, ids: string[]) => void }) {
+export function OutputViewer({ packet, onSelection, evidence, selectedItem, onShowItem, assessmentReference }: { packet: Packet; onSelection: FeedbackSelectionHandler; evidence: EvidenceInteraction; selectedItem?: string | null; onShowItem?: (key: string, ids: string[]) => void; assessmentReference?: { state: string; scores: Record<string, number> | null; onConfirm?: () => void } }) {
   const title = packet.task === 'assessment_quality' ? 'Generierte Einschätzung' : packet.task === 'feedback_quality' ? 'Generiertes Feedback' : 'Menschliches Feedback'
   return <section className="source-panel output-panel" aria-label={title}>
     <div className="panel-title"><h2>{title}</h2></div>
+    {packet.task === 'assessment_quality' && <section className={`assessment-reference assessment-reference-${assessmentReference?.state ?? 'unavailable'}`} aria-label="Expertenreferenz">
+      <strong>Expertenreferenz</strong>
+      {!assessmentReference?.scores && <p>Referenzbewertung noch nicht abgeschlossen.</p>}
+      {assessmentReference?.state === 'changed' && <p role="status">Die Referenzbewertung wurde seit der Task-B-Finalisierung geändert oder ist vorübergehend nicht verfügbar.</p>}
+      {assessmentReference?.state === 'available' && assessmentReference.onConfirm && <p role="status">Diese Referenz wurde nach der Task-B-Finalisierung verfügbar. Prüfen Sie sie ausdrücklich.</p>}
+      {(assessmentReference?.state === 'changed' || assessmentReference?.state === 'available') && assessmentReference.onConfirm && <button className="icon-button" onClick={assessmentReference.onConfirm}>Aktuelle Referenz prüfen</button>}
+      {assessmentReference?.state === 'reviewed' && <p role="status">Aktuelle Referenz wurde ausdrücklich geprüft.</p>}
+    </section>}
     <div className="source-scroll" tabIndex={0} aria-label={title + ' · Text'}>
       {packet.task === 'assessment_quality' ? <div className="assessment-output">{packet.output?.dimensions?.map(dimension => <article className={`assessment-dimension${selectedItem === dimension.dimension_id ? ' selected-feedback' : ''}`} key={dimension.dimension_id}>
-        <header><strong>{dimension.dimension_id}</strong><span>Punktwert {dimension.score.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span></header>
+        <header><strong>{dimension.dimension_id} · {packet.rubric.dimensions.find(item => item.dimension_id === dimension.dimension_id)?.name ?? dimension.dimension_id}</strong></header>
+        <div className="assessment-score-pair"><div><span>Expertenreferenz</span><strong>{assessmentReference?.scores?.[dimension.dimension_id]?.toLocaleString('de-DE', { maximumFractionDigits: 1 }) ?? '—'}</strong></div><div><span>Generierte Einschätzung</span><strong>{dimension.score.toLocaleString('de-DE', { maximumFractionDigits: 20 })}</strong></div></div>
         <p>{dimension.justification}</p><EvidenceReferences ids={dimension.evidence_segment_ids} segments={packet.reflection.segments} {...evidence} onShow={() => onShowItem?.(dimension.dimension_id, dimension.evidence_segment_ids)} onActivate={id => { onShowItem?.(dimension.dimension_id, dimension.evidence_segment_ids); evidence.onActivate(id) }} />
       </article>)}</div> : packet.task === 'feedback_quality' ? <div className="feedback-output">{(['strengths', 'weaknesses', 'suggestions'] as const).map(component => <section className="feedback-component" key={component}>
         <FeedbackHeading component={component} />
@@ -102,7 +111,7 @@ export function OutputViewer({ packet, onSelection, evidence, selectedItem, onSh
   </section>
 }
 
-export default function SourceComparison({ packet, onSelection, children, referenceEvidence }: { packet: Packet; onSelection: FeedbackSelectionHandler; children?: ReactNode; referenceEvidence?: { ids: string[]; label: string; onToggle: (id: string) => void } }) {
+export default function SourceComparison({ packet, onSelection, children, referenceEvidence, assessmentReference }: { packet: Packet; onSelection: FeedbackSelectionHandler; children?: ReactNode; referenceEvidence?: { ids: string[]; label: string; onToggle: (id: string) => void }; assessmentReference?: { state: string; scores: Record<string, number> | null; onConfirm?: () => void } }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
@@ -121,7 +130,7 @@ export default function SourceComparison({ packet, onSelection, children, refere
   }
   const reflectionOnly = packet.task === 'reflection_reference_score'
   return <ComparisonWorkspace reflectionOnly={reflectionOnly} reflection={<ReflectionViewer segments={packet.reflection.segments} annotations={reflectionOnly ? packet.segment_annotations : undefined} dimensionLabels={Object.fromEntries((packet.score_dimensions ?? []).map(dimension => [dimension.dimension_id, dimension.label]))} activeId={previewId ?? selectedId} activeIds={selectedIds} scrollRef={scrollRef} evidenceSelection={reflectionOnly ? referenceEvidence : undefined} />}>
-    {!reflectionOnly && <OutputViewer packet={packet} onSelection={onSelection} selectedItem={selectedItem} onShowItem={showItem} evidence={{ selectedId, selectedIds, onPreview: setPreviewId, onActivate: activateEvidence }} />}
+    {!reflectionOnly && <OutputViewer packet={packet} onSelection={onSelection} selectedItem={selectedItem} onShowItem={showItem} assessmentReference={assessmentReference} evidence={{ selectedId, selectedIds, onPreview: setPreviewId, onActivate: activateEvidence }} />}
     {children}
   </ComparisonWorkspace>
 }

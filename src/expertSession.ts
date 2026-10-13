@@ -1,4 +1,4 @@
-import type { ConsensusCaseState, ConsensusHistoryEntry, ConsensusRecord, Draft, Packet, RatingTask } from './ratingTypes'
+import type { AssessmentReferenceRecord, AssessmentReferenceSnapshot, ConsensusCaseState, ConsensusHistoryEntry, ConsensusRecord, Draft, Packet, RatingTask } from './ratingTypes'
 import { answerError, canonicalJson, caseState, emptyDraft, evaluationSteps, isValidReferenceScore, REFERENCE_SCORE_SCALE, responseForDraft } from './ratingValidation'
 
 export type PendingEditor = {
@@ -9,7 +9,7 @@ export type PendingEditor = {
 
 export type ExpertSession = {
   kind: 'prebi_expert_session'
-  schema_version: '1.0.0' | '1.1.0'
+  schema_version: '1.0.0' | '1.1.0' | '1.2.0'
   evaluator_id: string
   bundle_sha256: string
   packets: Packet[]
@@ -22,6 +22,7 @@ export type ExpertSession = {
   panel_id?: string
   panel_members?: string[]
   consensus?: Record<string, ConsensusRecord>
+  assessment_reference_snapshots?: Record<string, AssessmentReferenceRecord>
 }
 
 const tasks = ['reflection_reference_score', 'assessment_quality', 'feedback_quality', 'feedback_implied_score']
@@ -161,6 +162,9 @@ export function consensusResearchExport(session: ExpertSession, createRatingId: 
       submitted_at: consensus.finalized_at,
       response: responseForDraft(packet, session.drafts[packet.packet_id]),
       consensus,
+      ...(packet.task === 'assessment_quality' && session.assessment_reference_snapshots?.[packet.packet_id]
+        ? { assessment_reference: session.assessment_reference_snapshots[packet.packet_id] }
+        : {}),
     }
   })
   return {
@@ -179,7 +183,7 @@ export function validatePackets(value: unknown): Packet[] {
     const packet = object(item)
     if (packet.condition_blinded !== true || typeof packet.task !== 'string' || !tasks.includes(packet.task)) throw new Error('Die Datei muss verblindete Bewertungspakete enthalten.')
     if (packet.task === 'reflection_reference_score') {
-      allowKeys(packet, ['packet_id', 'task', 'packet_version', 'protocol_id', 'protocol_version', 'human_protocol', 'condition_blinded', 'reflection', 'rubric', 'score_dimensions'], ['scale', 'segment_annotations', 'displayed_reflection_sha256'])
+      allowKeys(packet, ['packet_id', 'task', 'packet_version', 'protocol_id', 'protocol_version', 'human_protocol', 'condition_blinded', 'reflection', 'rubric', 'score_dimensions'], ['scale', 'segment_annotations', 'displayed_reflection_sha256', 'reflection_id'])
       if (packet.scale !== undefined) {
         const scale = allowKeys(packet.scale, ['min', 'max', 'anchors'], ['step', 'id'])
         if (scale.min !== REFERENCE_SCORE_SCALE.min || scale.max !== REFERENCE_SCORE_SCALE.max
@@ -187,6 +191,10 @@ export function validatePackets(value: unknown): Packet[] {
           || (scale.id !== undefined && scale.id !== REFERENCE_SCORE_SCALE.id)) throw new Error('Das Referenzbewertungsprotokoll verwendet eine inkompatible Punktwertskala.')
         Object.values(object(scale.anchors)).forEach(text)
       }
+    }
+    if (packet.reflection_id !== undefined) {
+      text(packet.reflection_id)
+      if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(packet.reflection_id)) throw new Error('Ungültige pseudonyme Reflexions-ID.')
     }
     for (const field of ['packet_version', 'protocol_id', 'protocol_version', 'human_protocol']) text(packet[field])
     const reflection = object(packet.reflection)
@@ -291,7 +299,73 @@ export function validatePackets(value: unknown): Packet[] {
       if (packet[field] !== undefined && (typeof packet[field] !== 'string' || !/^[a-f0-9]{64}$/.test(packet[field] as string))) throw new Error('Ungültige Prüfsumme.')
     }
   }
+  const linkedReflections = new Map<string, Packet[]>()
+  for (const packet of value as Packet[]) {
+    if (!packet.reflection_id) continue
+    const linked = linkedReflections.get(packet.reflection_id) ?? []
+    linked.push(packet)
+    linkedReflections.set(packet.reflection_id, linked)
+  }
+  for (const linked of linkedReflections.values()) {
+    const first = linked[0]
+    if (linked.some(packet => canonicalJson(packet.reflection) !== canonicalJson(first.reflection)
+      || packet.rubric.version !== first.rubric.version)) {
+      throw new Error('Verknüpfte Reflexionspakete müssen identische Reflexionsinhalte und kompatible Rubrikversionen haben.')
+    }
+  }
   return JSON.parse(JSON.stringify(value)) as Packet[]
+}
+
+export function finalizedAssessmentReference(packet: Packet, session: ExpertSession): AssessmentReferenceSnapshot | null {
+  if (packet.task !== 'assessment_quality' || !packet.reflection_id || session.evaluation_mode !== 'expert_consensus') return null
+  const matches = session.packets.filter(candidate => candidate.task === 'reflection_reference_score'
+    && candidate.reflection_id === packet.reflection_id)
+  if (matches.length !== 1) return null
+  const referencePacket = matches[0]
+  if (canonicalJson(referencePacket.reflection) !== canonicalJson(packet.reflection)
+    || referencePacket.rubric.version !== packet.rubric.version) return null
+  const consensus = session.consensus?.[referencePacket.packet_id]
+  const draft = session.drafts[referencePacket.packet_id]
+  if (consensus?.status !== 'finalized' || !consensus.finalized_at || !draft) return null
+  const scores: Record<string, number> = {}
+  for (const dimension of referencePacket.score_dimensions ?? []) {
+    const score = draft.referenceAnswers[dimension.dimension_id]?.score
+    if (typeof score !== 'number' || !isValidReferenceScore(score)) return null
+    scores[dimension.dimension_id] = score
+  }
+  if (Object.keys(scores).length !== (referencePacket.score_dimensions?.length ?? 0)) return null
+  return { packet_id: referencePacket.packet_id, finalized_at: consensus.finalized_at, scores }
+}
+
+export function assessmentReferenceState(packet: Packet, session: ExpertSession) {
+  const record = session.assessment_reference_snapshots?.[packet.packet_id]
+  const current = finalizedAssessmentReference(packet, session)
+  if (!packet.reflection_id) return { state: 'unlinked' as const, snapshot: null, current: null }
+  if (record?.used_snapshot) {
+    if (current && canonicalJson(current) === canonicalJson(record.used_snapshot)) return { state: 'current' as const, snapshot: record.used_snapshot, current }
+    if (current && record.reviewed_snapshot && canonicalJson(current) === canonicalJson(record.reviewed_snapshot)) return { state: 'reviewed' as const, snapshot: record.used_snapshot, current }
+    return { state: 'changed' as const, snapshot: record.used_snapshot, current }
+  }
+  if (record?.reviewed_snapshot && current && canonicalJson(current) === canonicalJson(record.reviewed_snapshot)) {
+    return { state: 'reviewed' as const, snapshot: null, current }
+  }
+  return current
+    ? { state: 'available' as const, snapshot: null, current }
+    : { state: 'unavailable' as const, snapshot: null, current: null }
+}
+
+export function emptyAssessmentReferences(packets: Packet[]): Record<string, AssessmentReferenceRecord> {
+  return Object.fromEntries(packets.filter(packet => packet.task === 'assessment_quality').map(packet => [packet.packet_id, {
+    used_snapshot: null, reviewed_snapshot: null, reviewed_at: null,
+  }]))
+}
+
+export function captureAssessmentReference(packet: Packet, session: ExpertSession): AssessmentReferenceRecord {
+  const previous = session.assessment_reference_snapshots?.[packet.packet_id]
+    ?? { used_snapshot: null, reviewed_snapshot: null, reviewed_at: null }
+  return previous.used_snapshot
+    ? previous
+    : { ...previous, used_snapshot: finalizedAssessmentReference(packet, session) }
 }
 
 export async function sha256(value: unknown) {
@@ -442,15 +516,51 @@ function validateConsensusRecords(value: unknown, packets: Packet[], drafts: Rec
   }))
 }
 
+function validateAssessmentReferences(value: unknown, packets: Packet[]): Record<string, AssessmentReferenceRecord> {
+  const assessmentPackets = packets.filter(packet => packet.task === 'assessment_quality')
+  const records = exact(value, assessmentPackets.map(packet => packet.packet_id))
+  function snapshot(value: unknown, packet: Packet): AssessmentReferenceSnapshot {
+    const entry = exact(value, ['packet_id', 'finalized_at', 'scores'])
+    text(entry.packet_id)
+    if (!validTimestamp(entry.finalized_at)) throw new Error('Ungültiger Finalisierungszeitpunkt der Referenzbewertung.')
+    const finalizedAt = entry.finalized_at as string
+    const source = packets.find(candidate => candidate.packet_id === entry.packet_id)
+    if (!source || source.task !== 'reflection_reference_score' || !packet.reflection_id
+      || source.reflection_id !== packet.reflection_id || source.rubric.version !== packet.rubric.version
+      || canonicalJson(source.reflection) !== canonicalJson(packet.reflection)) throw new Error('Referenzsnapshot verweist auf eine unpassende Reflexion.')
+    const scores = object(entry.scores)
+    const expectedDimensions = (source.score_dimensions ?? []).map(dimension => dimension.dimension_id)
+    if (canonicalJson(Object.keys(scores).sort()) !== canonicalJson([...expectedDimensions].sort())) throw new Error('Referenzsnapshot enthält unvollständige Dimensionen.')
+    for (const dimensionId of expectedDimensions) {
+      score(scores[dimensionId])
+      if (!isValidReferenceScore(scores[dimensionId])) throw new Error('Referenzsnapshot enthält einen ungültigen Punktwert.')
+    }
+    return { packet_id: entry.packet_id, finalized_at: finalizedAt, scores: scores as Record<string, number> }
+  }
+  return Object.fromEntries(assessmentPackets.map(packet => {
+    const entry = exact(records[packet.packet_id], ['used_snapshot', 'reviewed_snapshot', 'reviewed_at'])
+    const usedSnapshot = entry.used_snapshot === null ? null : snapshot(entry.used_snapshot, packet)
+    const reviewedSnapshot = entry.reviewed_snapshot === null ? null : snapshot(entry.reviewed_snapshot, packet)
+    if (entry.reviewed_at !== null && !validTimestamp(entry.reviewed_at)) throw new Error('Ungültiger Zeitpunkt der Referenzprüfung.')
+    if ((reviewedSnapshot === null) !== (entry.reviewed_at === null)) throw new Error('Referenzprüfung benötigt Snapshot und Zeitpunkt.')
+    return [packet.packet_id, {
+      used_snapshot: usedSnapshot,
+      reviewed_snapshot: reviewedSnapshot,
+      reviewed_at: entry.reviewed_at as string | null,
+    }]
+  }))
+}
+
 export async function validateSession(value: unknown): Promise<ExpertSession> {
   const rawSession = object(value)
   const hasEditors = Object.hasOwn(rawSession, 'pending_editors')
-  const isConsensus = rawSession.schema_version === '1.1.0'
+  const isConsensus = rawSession.schema_version === '1.1.0' || rawSession.schema_version === '1.2.0'
+  const isReferenceAwareConsensus = rawSession.schema_version === '1.2.0'
   const baseFields = ['kind', 'schema_version', 'evaluator_id', 'bundle_sha256', 'packets', 'drafts', 'active_task', 'active_index', 'active_criterion']
   const session = isConsensus
-    ? allowKeys(rawSession, [...baseFields, 'evaluation_mode', 'panel_id', 'consensus'], ['pending_editors', 'panel_members'])
+    ? allowKeys(rawSession, [...baseFields, 'evaluation_mode', 'panel_id', 'consensus'], ['pending_editors', 'panel_members', ...(isReferenceAwareConsensus ? ['assessment_reference_snapshots'] : [])])
     : exact(rawSession, [...baseFields, ...(hasEditors ? ['pending_editors'] : [])])
-  if (session.kind !== 'prebi_expert_session' || !['1.0.0', '1.1.0'].includes(String(session.schema_version))) throw new Error('Unbekanntes Sitzungsformat.')
+  if (session.kind !== 'prebi_expert_session' || !['1.0.0', '1.1.0', '1.2.0'].includes(String(session.schema_version))) throw new Error('Unbekanntes Sitzungsformat.')
   text(session.evaluator_id)
   if (!session.evaluator_id.trim() || session.evaluator_id !== session.evaluator_id.trim()) throw new Error('Bewertungscode fehlt oder ist ungültig.')
   let panelId: string | undefined
@@ -480,12 +590,15 @@ export async function validateSession(value: unknown): Promise<ExpertSession> {
     }))
   }
   const consensus = isConsensus ? validateConsensusRecords(session.consensus, packets, validatedDrafts, panelId!) : undefined
+  const assessmentReferences = isReferenceAwareConsensus
+    ? validateAssessmentReferences(session.assessment_reference_snapshots ?? emptyAssessmentReferences(packets), packets)
+    : undefined
   const taskPackets = packets.filter(packet => packet.task === session.active_task)
   if (typeof session.active_task !== 'string' || !tasks.includes(session.active_task) || !Number.isInteger(session.active_index) || Number(session.active_index) < 0 || Number(session.active_index) >= taskPackets.length) throw new Error('Ungültige Fallposition.')
   if (isConsensus && session.active_task === 'feedback_implied_score') throw new Error('Der Legacy-Punktwert ist nicht Teil des Konsensworkflows.')
   const activePacket = taskPackets[Number(session.active_index)]
   if (!Number.isInteger(session.active_criterion) || Number(session.active_criterion) < 0 || Number(session.active_criterion) >= evaluationSteps(activePacket).length) throw new Error('Ungültige Kriteriumsposition.')
-  return { ...session, packets, drafts: validatedDrafts, ...(hasEditors ? { pending_editors: pendingEditors } : {}), ...(isConsensus ? { consensus } : {}) } as ExpertSession
+  return { ...session, packets, drafts: validatedDrafts, ...(hasEditors ? { pending_editors: pendingEditors } : {}), ...(isConsensus ? { consensus } : {}), ...(isReferenceAwareConsensus ? { assessment_reference_snapshots: assessmentReferences } : {}) } as ExpertSession
 }
 
 export function sessionKey(session: Pick<ExpertSession, 'evaluator_id' | 'bundle_sha256'> & Partial<Pick<ExpertSession, 'evaluation_mode'>>) {

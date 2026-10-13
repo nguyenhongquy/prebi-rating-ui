@@ -29,6 +29,16 @@
 .source-panel .assessment-dimension { padding: 0 0 16px; border: 0; border-bottom: 1px solid var(--rating-line); border-radius: 0; background: transparent; }
 .source-panel .assessment-dimension header { font-size: 16px; gap: 12px; }
 .source-panel .assessment-dimension header span { font: 14px Figtree, Arial, sans-serif; color: var(--ph-moss); }
+.assessment-reference { margin: 0 0 12px; padding: 10px 0; border-top: 1px solid var(--rating-line); border-bottom: 1px solid var(--rating-line); color: var(--rating-ink); }
+.assessment-reference > strong { font-size: 12px; }
+.assessment-reference p { margin: 8px 0 0; color: var(--rating-muted); font-size: 12px; line-height: 1.5; }
+.assessment-reference .icon-button { margin-top: 8px; }
+.assessment-reference-changed { border-left: 3px solid #a75d18; padding-left: 10px; }
+.assessment-score-pair { margin-top: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid #d9dfd9; border-bottom: 1px solid #d9dfd9; }
+.assessment-score-pair > div { min-width: 0; padding: 8px 6px; display: grid; gap: 5px; }
+.assessment-score-pair > div + div { border-left: 1px solid #d9dfd9; }
+.assessment-score-pair span { color: #536158; font-size: 11px; }
+.assessment-score-pair strong { color: var(--ph-moss); font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .source-panel .assessment-dimension p { max-width: 70ch; font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
 .feedback-heading { display: flex; align-items: center; gap: 8px; text-transform: none !important; font-size: 15px !important; }
 .feedback-heading svg { flex: 0 0 auto; }
