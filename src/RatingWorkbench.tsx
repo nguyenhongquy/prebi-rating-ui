@@ -12,7 +12,7 @@ import SourceComparison from './SourceComparison'
 import ConsensusControls from './ConsensusControls'
 import FeedbackComparisonControls from './FeedbackComparisonControls'
 import { componentLabels, type ConsensusCaseState, type Draft, type Packet, type RatingTask, type ScoreAnswer, type SpanComment } from './ratingTypes'
-import { answerError, canonicalJson, emptyDraft, evaluationSteps, isValidReferenceScore, parseReferenceScoreInput, referenceAnchorScores, REFERENCE_SCORE_SCALE, responseForDraft, type CaseState } from './ratingValidation'
+import { answerError, canonicalJson, emptyDraft, evaluationSteps, isValidReferenceScore, parseReferenceScoreInput, referenceAnchorScores, REFERENCE_SCORE_SCALE, responseForDraft, segmentDisplayNumbers, type CaseState } from './ratingValidation'
 import RatingProgress from './RatingProgress'
 import PacketNavigator from './PacketNavigator'
 import { readSession, writeSession, listSessions } from './localSessions'
@@ -698,6 +698,7 @@ export default function RatingWorkbench() {
           ? confirmCurrentAssessmentReference
           : undefined,
       } : undefined} historicalFeedback={feedbackC2Active && packet.task === 'feedback_quality' && packet.human_feedback?.trim() && c2Case?.historical_feedback_revealed_at ? packet.human_feedback : undefined}><section className={`task-panel${feedbackC2Active && packet.task === 'feedback_quality' ? ' c2-panel' : ''}`} aria-label={feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}><div className="panel-title"><span>{feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}</span></div>
+        {packet.task === 'reflection_reference_score' && packet.segment_annotation_summary && <ModellingBandSummary summary={packet.segment_annotation_summary} />}
         {feedbackC2Active && packet.task === 'feedback_quality' ? packet.human_feedback?.trim() && c2Snapshot && c2Case
           ? <FeedbackComparisonControls packet={packet} snapshot={c2Snapshot} comparison={c2Case} onDecision={decideCurrentC2} onScoreChange={changeCurrentC2Score} onReasonChange={changeCurrentC2Reason} onFinalize={finalizeCurrentC2} onReopen={reopenCurrentC2} />
           : <div className="comparison-unavailable" role="status"><strong>Vergleich noch nicht verfügbar</strong><p>Für diesen Fall liegt kein historisches Feedback vor.</p></div>
@@ -710,6 +711,24 @@ export default function RatingWorkbench() {
       </section><footer className="rating-footer"><PersistenceStatus state={persistence} /><div>{packet.task !== 'feedback_implied_score' && <button className="icon-button" disabled={criterionIndex === 0} onClick={() => navigateCriterion(criterionIndex - 1)} title="Vorheriges Kriterium" aria-label="Vorheriges Kriterium"><ChevronLeft size={16} /></button>}{packet.task !== 'feedback_implied_score' && criterionIndex < steps.length - 1 ? <button className="submit-button" onClick={nextCriterion}>Nächstes Kriterium<ChevronRight size={16} /></button> : <button className="submit-button" onClick={nextCase}>Nächster Fall<ChevronRight size={16} /></button>}</div></footer></SourceComparison></main></div>}
     </>}
   </AppShell>
+}
+
+function ModellingBandSummary({ summary }: { summary: NonNullable<Packet['segment_annotation_summary']> }) {
+  return <section className="modelling-band-summary" aria-label="Modellierungssplit: Bandhäufigkeiten und positive Mittelwerte">
+    <h3>Referenz aus dem Modellierungssplit</h3>
+    <div className="modelling-band-summary-scroll">
+      <table>
+        <thead><tr><th>Dimension</th><th>N</th><th>Band 1</th><th>Band 2</th><th>Band 3</th><th>Mittlerer positiver Bandwert</th></tr></thead>
+        <tbody>{summary.dimensions.map(dimension => <tr key={dimension.dimension_id}>
+          <th scope="row">{dimension.dimension_id}</th>
+          <td>{dimension.positive_band_count}</td>
+          {(['1', '2', '3'] as const).map(band => <td key={band}>{dimension.band_counts[band]} <small>({dimension.band_percentages[band].toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)</small></td>)}
+          <td>{dimension.mean_positive_band === null ? '–' : dimension.mean_positive_band.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+    <p>N zeigt je Dimension die Zahl positiver, bekannter Segment-Kandidat:innen in den Bändern 1–3. Prozentwerte und Mittelwert beziehen sich nur auf dieses N; Band 0 wird nicht angezeigt.</p>
+  </section>
 }
 
 function ScoreCoding({ packet, draft, activeIndex, updateDraft, selectedSpan, spanComment, setSpanComment, addSpanComment }: {
@@ -749,7 +768,7 @@ function ReferenceRating({ packet, draft, activeIndex, updateDraft }: {
   const selectedAnchors = new Set(referenceAnchorScores(answer.score, bands.map(([score]) => Number(score))))
   const answerLabel = `${dimension.dimension_id} · ${dimension.label}`
   const inputId = `reference-score-${dimension.dimension_id}`
-  const segmentNumbers = new Map(packet.reflection.segments.map(segment => [segment.segment_id, segment.order + 1]))
+  const segmentNumbers = segmentDisplayNumbers(packet.reflection.segments)
   function setReferenceScore(score: number | null) {
     if (score !== null && !isValidReferenceScore(score)) return
     setScoreInput(score === null ? '' : score.toFixed(1).replace('.', ','))

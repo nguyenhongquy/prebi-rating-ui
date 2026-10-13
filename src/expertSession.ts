@@ -213,7 +213,11 @@ export function validatePackets(value: unknown): Packet[] {
     const packet = object(item)
     if (packet.condition_blinded !== true || typeof packet.task !== 'string' || !tasks.includes(packet.task)) throw new Error('Die Datei muss verblindete Bewertungspakete enthalten.')
     if (packet.task === 'reflection_reference_score') {
-      allowKeys(packet, ['packet_id', 'task', 'packet_version', 'protocol_id', 'protocol_version', 'human_protocol', 'condition_blinded', 'reflection', 'rubric', 'score_dimensions'], ['scale', 'segment_annotations', 'displayed_reflection_sha256', 'reflection_id'])
+      allowKeys(packet, ['packet_id', 'task', 'packet_version', 'protocol_id', 'protocol_version', 'human_protocol', 'condition_blinded', 'reflection', 'rubric', 'score_dimensions'], ['scale', 'segment_annotations', 'segment_annotation_summary', 'displayed_reflection_sha256', 'reflection_id', 'displayed_context'])
+      if (packet.displayed_context !== undefined
+        && (!Array.isArray(packet.displayed_context) || !packet.displayed_context.every(value => typeof value === 'string'))) {
+        throw new Error('Ungültiger angezeigter Referenzkontext.')
+      }
       if (packet.scale !== undefined) {
         const scale = allowKeys(packet.scale, ['min', 'max', 'anchors'], ['step', 'id'])
         if (scale.min !== REFERENCE_SCORE_SCALE.min || scale.max !== REFERENCE_SCORE_SCALE.max
@@ -276,13 +280,49 @@ export function validatePackets(value: unknown): Packet[] {
         if (!Array.isArray(packet.segment_annotations)) throw new Error('Ungültige Segmentannotationen.')
         for (const annotation of packet.segment_annotations) {
           const entry = object(annotation)
-          const keys = ['segment_id', 'dimension_id', 'skill_label', 'level']
+          const keys = ['segment_id', 'dimension_id', 'skill_label', 'level', 'candidate_id', 'scope', 'scope_known', 'known', 'requires_review']
           if (Object.keys(entry).some(key => !keys.includes(key)) || !Object.hasOwn(entry, 'segment_id') || !Object.hasOwn(entry, 'dimension_id')) throw new Error('Ungültige Segmentannotation.')
           text(entry.segment_id)
           text(entry.dimension_id)
           if (!segmentIds.has(entry.segment_id) || !rubricIds.has(entry.dimension_id)) throw new Error('Segmentannotation verweist auf eine unbekannte Reflexion oder Dimension.')
           if (entry.skill_label !== undefined) text(entry.skill_label)
           if (entry.level !== undefined) text(entry.level)
+          if (entry.candidate_id !== undefined) text(entry.candidate_id)
+          if (entry.scope !== undefined && !['in_scope', 'out_of_scope', 'unknown'].includes(String(entry.scope))) throw new Error('Ungültiger Segmentgeltungsbereich.')
+          for (const field of ['scope_known', 'known', 'requires_review']) {
+            if (entry[field] !== undefined && typeof entry[field] !== 'boolean') throw new Error('Ungültiger Segmentreferenzstatus.')
+          }
+        }
+      }
+      if (packet.segment_annotation_summary !== undefined) {
+        const summary = exact(packet.segment_annotation_summary, ['aggregation_unit', 'dimensions'])
+        if (summary.aggregation_unit !== 'candidate_annotation' || !Array.isArray(summary.dimensions)) throw new Error('Ungültige Modellierungssplit-Zusammenfassung.')
+        identifiers(summary.dimensions, 'dimension_id')
+        if (summary.dimensions.length !== packet.score_dimensions.length) throw new Error('Zusammenfassungsdimensionen stimmen nicht mit Task A überein.')
+        for (const dimension of summary.dimensions) {
+          const entry = exact(dimension, ['dimension_id', 'known_band_count', 'positive_band_count', 'band_counts', 'band_percentages', 'mean_positive_band'])
+          text(entry.dimension_id)
+          if (!rubricIds.has(entry.dimension_id)) throw new Error('Zusammenfassungsdimension fehlt im Bewertungsraster.')
+          const counts = exact(entry.band_counts, ['0', '1', '2', '3'])
+          const percentages = exact(entry.band_percentages, ['1', '2', '3'])
+          for (const count of Object.values(counts)) {
+            if (!Number.isInteger(count) || Number(count) < 0) throw new Error('Ungültige Bandhäufigkeit in der Modellierungssplit-Zusammenfassung.')
+          }
+          const knownCount = Number(counts['0']) + Number(counts['1']) + Number(counts['2']) + Number(counts['3'])
+          const positiveCount = Number(counts['1']) + Number(counts['2']) + Number(counts['3'])
+          if (entry.known_band_count !== knownCount || entry.positive_band_count !== positiveCount) throw new Error('Bandhäufigkeiten stimmen nicht mit der bekannten Annotationenzahl überein.')
+          for (const band of ['1', '2', '3']) {
+            const percentage = percentages[band]
+            const expected = positiveCount ? Number(counts[band]) * 100 / positiveCount : 0
+            if (typeof percentage !== 'number' || !Number.isFinite(percentage) || Math.abs(percentage - expected) > 0.11) throw new Error('Bandprozente stimmen nicht mit den Annotationenzahlen überein.')
+          }
+          if (positiveCount === 0) {
+            if (entry.mean_positive_band !== null) throw new Error('Ohne positive Bänder darf kein Mittelwert angegeben sein.')
+          } else {
+            const expectedMean = (Number(counts['1']) + Number(counts['2']) * 2 + Number(counts['3']) * 3) / positiveCount
+            if (typeof entry.mean_positive_band !== 'number' || !Number.isFinite(entry.mean_positive_band)
+              || Math.abs(entry.mean_positive_band - expectedMean) > 0.001) throw new Error('Ungültiger Mittelwert positiver Bänder.')
+          }
         }
       }
     } else if (packet.task === 'feedback_implied_score') {

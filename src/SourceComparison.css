@@ -18,6 +18,16 @@
 .source-panel .segment p { max-width: 70ch; font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
 .segment-annotations { margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 5px; list-style: none; }
 .segment-annotations li { min-height: 24px; padding: 3px 7px; display: inline-flex; align-items: center; gap: 6px; border-left: 3px solid #718078; background: #f0f3f0; color: #334239; font-size: 11px; }
+.annotation-source-note { flex: 0 0 auto; margin: -4px 0 8px; color: #657169; font-size: 11px; line-height: 1.4; }
+.segment-candidate-references { margin-top: 8px; display: grid; gap: 6px; }
+.candidate-reference { min-width: 0; }
+.candidate-reference-bands { display: flex; flex-wrap: wrap; gap: 6px; }
+.candidate-reference-band { min-height: 30px; padding: 4px 8px; display: inline-flex; align-items: center; gap: 7px; border-left: 3px solid; color: #26352d; font-size: 12px; }
+.candidate-reference-band strong { font-size: 11px; font-weight: 700; }
+.candidate-reference-band b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.candidate-band-sw { border-color: #176b4a; background: #e7f1e9; }
+.candidate-band-ua { border-color: #a65b19; background: #f7eee5; }
+.candidate-band-ha { border-color: #4e648c; background: #edf0f6; }
 .segment-annotations strong { font-size: 10px; }
 .segment-annotations small { color: inherit; font-weight: 700; }
 .segment-annotations .annotation-sw { border-color: #176b4a; background: #e7f1e9; }

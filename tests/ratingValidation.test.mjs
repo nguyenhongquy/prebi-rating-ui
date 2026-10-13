@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-const { answerError, canonicalJson, evaluationSteps, responseForDraft, submissionState, emptyDraft, caseState, isValidReferenceScore, parseReferenceScoreInput, referenceAnchorScores, REFERENCE_SCORE_SCALE } = await import(process.env.PREBI_RATING_VALIDATION_MODULE)
+const { answerError, canonicalJson, evaluationSteps, responseForDraft, submissionState, emptyDraft, caseState, isValidReferenceScore, parseReferenceScoreInput, referenceAnchorScores, segmentDisplayNumbers, visibleModellingBands, REFERENCE_SCORE_SCALE } = await import(process.env.PREBI_RATING_VALIDATION_MODULE)
 const packet = {
   packet_id: 'synthetic', task: 'assessment_quality', packet_version: '1.0.0',
   protocol_id: 'synthetic', protocol_version: '0.3.0', human_protocol: 'Original guide',
@@ -21,6 +21,29 @@ test('step enumeration preserves IDs and packet order', () => {
   assert.deepEqual(evaluationSteps(packet), [{ id: 'fit', label: 'Fit' }])
   assert.deepEqual(evaluationSteps(impliedPacket), [{ id: 'SW', label: 'Dimension SW' }])
   assert.deepEqual(evaluationSteps({ ...packet, criteria: [] }), [])
+})
+
+test('segment display numbering supports zero-based and one-based packet orders', () => {
+  assert.deepEqual([...segmentDisplayNumbers([
+    { segment_id: 'zero-a', order: 0, text: 'A' },
+    { segment_id: 'zero-b', order: 1, text: 'B' },
+  ])], [['zero-a', 1], ['zero-b', 2]])
+  assert.deepEqual([...segmentDisplayNumbers([
+    { segment_id: 'one-a', order: 1, text: 'A' },
+    { segment_id: 'one-b', order: 2, text: 'B' },
+  ])], [['one-a', 1], ['one-b', 2]])
+})
+
+test('Task A modelling references show only known non-zero SW, UA, and HA bands', () => {
+  const displayed = visibleModellingBands([
+    { segment_id: 'seg', dimension_id: 'SW', level: '0', known: true },
+    { segment_id: 'seg', dimension_id: 'UA', level: '2', known: true },
+    { segment_id: 'seg', dimension_id: 'HA', level: '3', known: false },
+  ], { SW: 'Situationswahrnehmung', UA: 'Ursachenanalyse', HA: 'Handlungsalternativen' })
+  assert.deepEqual(displayed, [
+    { dimension_id: 'UA', label: 'Ursachenanalyse', band: '2' },
+  ])
+  assert.ok(displayed.every(item => item.band !== '0'))
 })
 
 test('quality rating must exist and fit the protocol scale', () => {

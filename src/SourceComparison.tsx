@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type SyntheticEvent } from 'react'
 import { ArrowUpRight, Lightbulb, Link, Sprout } from 'lucide-react'
 import { componentLabels, type Packet, type Segment } from './ratingTypes'
+import { segmentDisplayNumbers, visibleModellingBands } from './ratingValidation'
 import './SourceComparison.css'
 
 export type FeedbackSelectionHandler = (event: SyntheticEvent<HTMLTextAreaElement>, component: string, index: number) => void
@@ -41,7 +42,7 @@ type EvidenceInteraction = {
 }
 
 export function EvidenceReferences({ ids, segments, selectedId, selectedIds, onShow, onPreview, onActivate }: EvidenceInteraction & { ids: string[]; segments: Segment[] }) {
-  const segmentNumbers = new Map(segments.map(segment => [segment.segment_id, segment.order + 1]))
+  const segmentNumbers = segmentDisplayNumbers(segments)
   return <div className="evidence-references">
     {onShow && ids.length > 0 ? <button className="evidence-show" onClick={onShow}><Link size={14} />Beleg anzeigen</button> : <span>Belege:</span>}
     {ids.length ? ids.map((id, index) => {
@@ -73,12 +74,38 @@ export function scrollToEvidence(container: HTMLDivElement | null, id: string) {
 
 export function ReflectionViewer({ segments, annotations = [], dimensionLabels = {}, activeId, activeIds = [], scrollRef, evidenceSelection }: { segments: Segment[]; annotations?: NonNullable<Packet['segment_annotations']>; dimensionLabels?: Record<string, string>; activeId: string | null; activeIds?: string[]; scrollRef: RefObject<HTMLDivElement | null>; evidenceSelection?: { ids: string[]; onToggle: (id: string) => void; label: string } }) {
   const dimensions = new Map(Object.entries(dimensionLabels))
+  const segmentNumbers = segmentDisplayNumbers(segments)
+  const hasCandidateReferences = annotations.some(annotation => annotation.candidate_id !== undefined)
   return <section className="source-panel" aria-label="Reflexion">
     <div className="panel-title"><h2>Reflexion</h2><small>{segments.length} {segments.length === 1 ? 'Segment' : 'Segmente'}</small></div>
+    {hasCandidateReferences && <p className="annotation-source-note">Die Karten zeigen vorhandene Segmentannotationen aus dem Modellierungssplit als Kontext. Sie sind kein fertiger Task-A-Punktwert: Bewerten Sie die Reflexion weiterhin selbst anhand der Rubrik. Mehrere Modellierungskandidaten bleiben getrennt und sind nicht adjudiziert; „Unbekannt“ bedeutet, dass für dieses Merkmal keine bekannte Annotation vorliegt.</p>}
     <div ref={scrollRef} className="source-scroll segments" tabIndex={0} aria-label="Reflexionssegmente">
-      {segments.map(segment => <article className={`segment${activeId === segment.segment_id || activeIds.includes(segment.segment_id) || evidenceSelection?.ids.includes(segment.segment_id) ? ' evidence-highlight' : ''}`} key={segment.segment_id} data-segment-id={segment.segment_id} aria-label={`Reflexionssegment ${segment.order + 1}${activeId === segment.segment_id || activeIds.includes(segment.segment_id) ? ', hervorgehobener Beleg' : ''}`}>
-        {evidenceSelection ? <label className="segment-evidence-choice"><input type="checkbox" aria-label={`Segment ${segment.order + 1} als Beleg für ${evidenceSelection.label}`} checked={evidenceSelection.ids.includes(segment.segment_id)} onChange={() => evidenceSelection.onToggle(segment.segment_id)} /><span>{segment.order + 1}</span></label> : <span className="segment-id">{segment.order + 1}</span>}<div><p>{segment.text}</p>{annotations.filter(annotation => annotation.segment_id === segment.segment_id).length > 0 && <ul className="segment-annotations" aria-label={`Expertenannotationen zu Segment ${segment.order + 1}`}>{annotations.filter(annotation => annotation.segment_id === segment.segment_id).map((annotation, index) => <li className={`annotation-${annotation.dimension_id.toLowerCase()}`} key={`${annotation.dimension_id}-${index}`}><strong>{dimensions.get(annotation.dimension_id) ?? annotation.dimension_id}</strong>{annotation.level && <small>{annotation.level}</small>}</li>)}</ul>}</div>
-      </article>)}
+      {segments.map(segment => {
+        const segmentAnnotations = annotations.filter(annotation => annotation.segment_id === segment.segment_id)
+        const candidateGroups = new Map<string, NonNullable<Packet['segment_annotations']>>()
+        for (const annotation of segmentAnnotations) {
+          if (!annotation.candidate_id) continue
+          const group = candidateGroups.get(annotation.candidate_id) ?? []
+          group.push(annotation)
+          candidateGroups.set(annotation.candidate_id, group)
+        }
+        const legacyAnnotations = segmentAnnotations.filter(annotation => !annotation.candidate_id)
+        return <article className={`segment${activeId === segment.segment_id || activeIds.includes(segment.segment_id) || evidenceSelection?.ids.includes(segment.segment_id) ? ' evidence-highlight' : ''}`} key={segment.segment_id} data-segment-id={segment.segment_id} aria-label={`Reflexionssegment ${segmentNumbers.get(segment.segment_id)}${activeId === segment.segment_id || activeIds.includes(segment.segment_id) ? ', hervorgehobener Beleg' : ''}`}>
+          {evidenceSelection ? <label className="segment-evidence-choice"><input type="checkbox" aria-label={`Segment ${segmentNumbers.get(segment.segment_id)} als Beleg für ${evidenceSelection.label}`} checked={evidenceSelection.ids.includes(segment.segment_id)} onChange={() => evidenceSelection.onToggle(segment.segment_id)} /><span>{segmentNumbers.get(segment.segment_id)}</span></label> : <span className="segment-id">{segmentNumbers.get(segment.segment_id)}</span>}<div><p>{segment.text}</p>
+            {candidateGroups.size > 0 && <div className="segment-candidate-references" aria-label={`Modellierungssplit-Referenzen zu Segment ${segmentNumbers.get(segment.segment_id)}`}>
+              {[...candidateGroups.values()].map(candidate => {
+                const nonZeroBands = visibleModellingBands(candidate, Object.fromEntries(dimensions))
+                if (!nonZeroBands.length) return null
+                const candidateId = candidate[0].candidate_id
+                return <div className="candidate-reference" key={candidateId}>
+                  <div className="candidate-reference-bands">{nonZeroBands.map(item => <span className={`candidate-reference-band candidate-band-${item.dimension_id.toLowerCase()}`} key={item.dimension_id}><strong>{item.label}</strong><b>{item.band}</b></span>)}</div>
+                </div>
+              })}
+            </div>}
+            {legacyAnnotations.length > 0 && <ul className="segment-annotations" aria-label={`Expertenannotationen zu Segment ${segmentNumbers.get(segment.segment_id)}`}>{legacyAnnotations.map((annotation, index) => <li className={`annotation-${annotation.dimension_id.toLowerCase()}`} key={`${annotation.dimension_id}-${index}`}><strong>{dimensions.get(annotation.dimension_id) ?? annotation.dimension_id}</strong>{annotation.level && <small>{annotation.level}</small>}</li>)}</ul>}
+          </div>
+        </article>
+      })}
     </div>
   </section>
 }

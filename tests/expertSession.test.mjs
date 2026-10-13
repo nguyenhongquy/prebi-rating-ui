@@ -80,6 +80,43 @@ test('reference packets accept annotations but reject dangling, unknown, or outp
   assert.throws(() => validatePackets([invalidBands]), /numerische Punktwertanker/)
 })
 
+test('Task A accepts separate modelling candidates with scope, knownness, and review flags', () => {
+  const candidatePacket = {
+    ...reference,
+    segment_annotations: [
+      { segment_id: reference.reflection.segments[0].segment_id, dimension_id: 'SW', skill_label: 'SW', level: '2', candidate_id: 'candidate-a', scope: 'in_scope', scope_known: true, known: true, requires_review: false },
+      { segment_id: reference.reflection.segments[0].segment_id, dimension_id: 'UA', skill_label: 'UA', level: '', candidate_id: 'candidate-a', scope: 'in_scope', scope_known: true, known: false, requires_review: false },
+      { segment_id: reference.reflection.segments[0].segment_id, dimension_id: 'SW', skill_label: 'SW', level: 'N', candidate_id: 'candidate-b', scope: 'out_of_scope', scope_known: true, known: false, requires_review: true },
+    ],
+  }
+  const validated = validatePackets([candidatePacket])[0]
+  assert.equal(validated.segment_annotations.length, 3)
+  assert.deepEqual(new Set(validated.segment_annotations.map(annotation => annotation.candidate_id)), new Set(['candidate-a', 'candidate-b']))
+  assert.throws(() => validatePackets([{ ...candidatePacket, segment_annotations: [{ ...candidatePacket.segment_annotations[0], known: 'false' }] }]), /Segmentreferenzstatus/)
+})
+
+test('Task A band summary validates per-dimension counts, hidden-band denominator, and positive mean', () => {
+  const summary = {
+    aggregation_unit: 'candidate_annotation',
+    dimensions: reference.score_dimensions.map(dimension => ({
+      dimension_id: dimension.dimension_id,
+      known_band_count: 2,
+      positive_band_count: 1,
+      band_counts: { '0': 1, '1': 0, '2': 1, '3': 0 },
+      band_percentages: { '1': 0, '2': 100, '3': 0 },
+      mean_positive_band: 2,
+    })),
+  }
+  const packet = validatePackets([{ ...reference, segment_annotation_summary: summary }])[0]
+  assert.equal(packet.segment_annotation_summary.dimensions[0].mean_positive_band, 2)
+  assert.throws(() => validatePackets([{ ...reference, segment_annotation_summary: {
+    ...summary,
+    dimensions: summary.dimensions.map((dimension, index) => index === 0
+      ? { ...dimension, band_percentages: { ...dimension.band_percentages, '2': 50 } }
+      : dimension),
+  } }]), /Bandprozente/)
+})
+
 test('historical feedback is optional only on Task C and rejected on Task B', () => {
   const withHistoricalFeedback = validatePackets([{ ...quality, human_feedback: 'Lecturer feedback, unstructured.' }])[0]
   assert.equal(withHistoricalFeedback.human_feedback, 'Lecturer feedback, unstructured.')

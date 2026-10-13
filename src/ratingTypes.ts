@@ -59,7 +59,29 @@ export type FeedbackComparisonState = {
 }
 export type Criterion = { criterion_id: string; label: string; description: string; anchors?: Record<string, string> }
 export type Segment = { segment_id: string; order: number; text: string }
-export type SegmentAnnotation = { segment_id: string; dimension_id: string; skill_label?: string; level?: string }
+export type SegmentAnnotation = {
+  segment_id: string
+  dimension_id: string
+  skill_label?: string
+  level?: string
+  candidate_id?: string
+  scope?: 'in_scope' | 'out_of_scope' | 'unknown'
+  scope_known?: boolean
+  known?: boolean
+  requires_review?: boolean
+}
+export type SegmentAnnotationSummaryDimension = {
+  dimension_id: string
+  known_band_count: number
+  positive_band_count: number
+  band_counts: Record<'0' | '1' | '2' | '3', number>
+  band_percentages: Record<'1' | '2' | '3', number>
+  mean_positive_band: number | null
+}
+export type SegmentAnnotationSummary = {
+  aggregation_unit: 'candidate_annotation'
+  dimensions: SegmentAnnotationSummaryDimension[]
+}
 export type FeedbackItem = { text: string; evidence_segment_ids?: string[] }
 export type EvidenceSpan = { start_character: number; end_character: number; quote: string }
 export type CriterionAnswer = { score: number | null; unable_to_judge: boolean; comment: string }
@@ -99,6 +121,7 @@ export type Packet = {
   scale?: { min: number; max: number; step?: number; id?: string; anchors: Record<string, string> }
   score_dimensions?: Array<{ dimension_id: string; label: string }>
   segment_annotations?: SegmentAnnotation[]
+  segment_annotation_summary?: SegmentAnnotationSummary
   reflection: { segments: Segment[] }
   rubric: { version: string; dimensions: Array<{ dimension_id: string; name: string; description: string; bands: Record<string, string> }> }
   output?: {
