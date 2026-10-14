@@ -17,6 +17,20 @@ need to install anything or create a GitHub account.
    provided. The app does not send it automatically. Keep the file until the
    team confirms it arrived.
 
+## Versioned document-rubric packets
+
+New document-rubric 1.2.0 packets show the seven permitted document scores and
+the complete assessment principles under **Bewertungsraster**. Segment modelling
+labels are A/B/C, not document scores; candidate counts and distinct-segment
+counts describe different units. Historical packets and saved sessions remain
+readable.
+
+Generated evidence synthesis is stored separately and hidden by default. It
+can appear in its own collapsible panel only for explicitly released Task B
+packets (`synthesis_display_allowed=true`). It is never available during
+independent reference scoring or feedback-quality scoring. Do not alter packet
+visibility flags without an approved study-protocol decision.
+
 ## Pause and resume
 
 Your work is saved automatically in the browser on the device where you are

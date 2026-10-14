@@ -623,6 +623,74 @@ test('content hash mismatches reject imports', async () => {
   await assert.rejects(checkPacketHashes([{ ...implied, displayed_reflection_sha256: '0'.repeat(64) }]), /Prüfsumme/)
 })
 
+async function documentPacket(source = assessment) {
+  const packet = structuredClone(source)
+  packet.rubric.version = '1.2.0'
+  packet.pipeline_version = '2.0.0'
+  const claim = { interpretation: 'Synthetic supported interpretation.', evidence_refs: [packet.reflection.segments[0].segment_id] }
+  packet.evidence_synthesis = ['SW', 'UA', 'HA'].map(dimension_id => ({
+    dimension_id, demonstrated_depth: [structuredClone(claim)], development: [structuredClone(claim)],
+    integrative_coherence: [structuredClone(claim)], limitations: [], uncertainty: [],
+  }))
+  packet.synthesis_display_allowed = false
+  packet.display_synthesis_sha256 = await helpers.sha256(packet.evidence_synthesis)
+  if (packet.task === 'assessment_quality') {
+    for (const dimension of Object.values(packet.output.dimensions)) {
+      dimension.score = 1.5
+      dimension.intermediate_score_explanation = 'The lower anchor is met; elaboration is insufficient for the higher anchor.'
+    }
+  }
+  packet.display_output_sha256 = await helpers.sha256(packet.output)
+  return packet
+}
+
+test('document packets validate half scores, separate synthesis, and immutable synthesis hashes', async () => {
+  const packet = await documentPacket()
+  validatePackets([packet])
+  await checkPacketHashes([packet])
+  packet.evidence_synthesis[0].development[0].interpretation = 'Changed interpretation.'
+  await assert.rejects(checkPacketHashes([packet]), /Synthese/)
+})
+
+test('document scores reject arbitrary decimals and unexplained intermediate values', async () => {
+  const packet = await documentPacket()
+  const dimension = packet.output.dimensions[0]
+  for (const score of [0, 0.5, 1, 1.5, 2, 2.5, 3]) {
+    dimension.score = score
+    validatePackets([packet])
+  }
+  dimension.score = 1.1
+  assert.throws(() => validatePackets([packet]), /Halbpunkt/)
+  dimension.score = 1.5
+  dimension.intermediate_score_explanation = ' '
+  assert.throws(() => validatePackets([packet]), /Ankereinordnung/)
+})
+
+test('document synthesis rejects unknown evidence, scores, and missing version metadata', async () => {
+  const packet = await documentPacket()
+  packet.evidence_synthesis[0].development[0].evidence_refs = ['unknown']
+  assert.throws(() => validatePackets([packet]), /unbekannte Belege/)
+  const scored = await documentPacket()
+  scored.evidence_synthesis[0].score = 2
+  assert.throws(() => validatePackets([scored]))
+  const missing = await documentPacket()
+  delete missing.evidence_synthesis
+  assert.throws(() => validatePackets([missing]), /Pipelineversion/)
+})
+
+test('synthesis visibility requires an explicit Task B release and never alters independent scoring', async () => {
+  const packet = await documentPacket()
+  packet.synthesis_display_allowed = true
+  validatePackets([packet])
+  const feedback = await documentPacket(quality)
+  validatePackets([feedback])
+  feedback.synthesis_display_allowed = true
+  assert.throws(() => validatePackets([feedback]), /Protokollentscheidung/)
+  assert.throws(() => validatePackets([{ ...reference, evidence_synthesis: packet.evidence_synthesis }]))
+  const component = readFileSync(new URL('../src/SourceComparison.tsx', import.meta.url), 'utf8')
+  assert.match(component, /packet\.synthesis_display_allowed === true && packet\.task === 'assessment_quality'/)
+})
+
 test('enum fields cannot be smuggled through array-to-string coercion', () => {
   assert.throws(() => validatePackets([{ ...quality, task: ['feedback_quality'] }]))
   const draft = emptyDraft(implied)

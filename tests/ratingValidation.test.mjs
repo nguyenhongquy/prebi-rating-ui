@@ -41,7 +41,7 @@ test('Task A modelling references show only known non-zero SW, UA, and HA bands'
     { segment_id: 'seg', dimension_id: 'HA', level: '3', known: false },
   ], { SW: 'Situationswahrnehmung', UA: 'Ursachenanalyse', HA: 'Handlungsalternativen' })
   assert.deepEqual(displayed, [
-    { dimension_id: 'UA', label: 'Ursachenanalyse', band: '2' },
+    { dimension_id: 'UA', label: 'Ursachenanalyse', band: 'B' },
   ])
   assert.ok(displayed.every(item => item.band !== '0'))
 })

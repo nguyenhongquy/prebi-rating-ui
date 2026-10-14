@@ -245,7 +245,7 @@ export function validatePackets(value: unknown): Packet[] {
       segmentOrders.add(Number(entry.order))
     }
     const rubric = object(packet.rubric)
-    if (packet.task === 'reflection_reference_score') allowKeys(rubric, ['version', 'dimensions'])
+    if (packet.task === 'reflection_reference_score') allowKeys(rubric, ['version', 'dimensions'], ['rubric_id', 'level', 'scale', 'glossary', 'assessment_principles'])
     text(rubric.version)
     if (!Array.isArray(rubric.dimensions)) throw new Error('Ungültiges Bewertungsraster.')
     identifiers(rubric.dimensions, 'dimension_id')
@@ -295,12 +295,15 @@ export function validatePackets(value: unknown): Packet[] {
         }
       }
       if (packet.segment_annotation_summary !== undefined) {
-        const summary = exact(packet.segment_annotation_summary, ['aggregation_unit', 'dimensions'])
+        const summary = allowKeys(packet.segment_annotation_summary, ['aggregation_unit', 'dimensions'], ['counting_note'])
+        if (summary.counting_note !== undefined) text(summary.counting_note)
         if (summary.aggregation_unit !== 'candidate_annotation' || !Array.isArray(summary.dimensions)) throw new Error('Ungültige Modellierungssplit-Zusammenfassung.')
         identifiers(summary.dimensions, 'dimension_id')
         if (summary.dimensions.length !== packet.score_dimensions.length) throw new Error('Zusammenfassungsdimensionen stimmen nicht mit Task A überein.')
         for (const dimension of summary.dimensions) {
-          const entry = exact(dimension, ['dimension_id', 'known_band_count', 'positive_band_count', 'band_counts', 'band_percentages', 'mean_positive_band'])
+          const entry = allowKeys(dimension, ['dimension_id', 'known_band_count', 'positive_band_count', 'band_counts', 'band_percentages'], ['mean_positive_band', 'distinct_assigned_segment_count'])
+          if (entry.distinct_assigned_segment_count !== undefined
+            && (!Number.isInteger(entry.distinct_assigned_segment_count) || Number(entry.distinct_assigned_segment_count) < 0 || Number(entry.distinct_assigned_segment_count) > reflection.segments.length)) throw new Error('Ungültige Anzahl verschiedener zugeordneter Segmente.')
           text(entry.dimension_id)
           if (!rubricIds.has(entry.dimension_id)) throw new Error('Zusammenfassungsdimension fehlt im Bewertungsraster.')
           const counts = exact(entry.band_counts, ['0', '1', '2', '3'])
@@ -316,7 +319,9 @@ export function validatePackets(value: unknown): Packet[] {
             const expected = positiveCount ? Number(counts[band]) * 100 / positiveCount : 0
             if (typeof percentage !== 'number' || !Number.isFinite(percentage) || Math.abs(percentage - expected) > 0.11) throw new Error('Bandprozente stimmen nicht mit den Annotationenzahlen überein.')
           }
-          if (positiveCount === 0) {
+          if (entry.mean_positive_band === undefined) {
+            if (entry.distinct_assigned_segment_count === undefined) throw new Error('Die Anzahl verschiedener zugeordneter Segmente fehlt.')
+          } else if (positiveCount === 0) {
             if (entry.mean_positive_band !== null) throw new Error('Ohne positive Bänder darf kein Mittelwert angegeben sein.')
           } else {
             const expectedMean = (Number(counts['1']) + Number(counts['2']) * 2 + Number(counts['3']) * 3) / positiveCount
@@ -353,6 +358,11 @@ export function validatePackets(value: unknown): Packet[] {
         for (const dimension of output.dimensions) {
           const entry = object(dimension)
           if (typeof entry.score !== 'number' || !Number.isFinite(entry.score)) throw new Error('Ungültiger Punktwert.')
+          if (rubric.version === '1.2.0') {
+            if (![0, 0.5, 1, 1.5, 2, 2.5, 3].includes(entry.score)) throw new Error('Dokumentwerte müssen einem zulässigen Halbpunktanker entsprechen.')
+            if ([0.5, 1.5, 2.5].includes(entry.score)
+              && (typeof entry.intermediate_score_explanation !== 'string' || !entry.intermediate_score_explanation.trim())) throw new Error('Zwischenwerte benötigen eine begründete Ankereinordnung.')
+          }
           text(entry.justification)
           if (!Array.isArray(entry.evidence_segment_ids) || !entry.evidence_segment_ids.every(id => typeof id === 'string')) throw new Error('Ungültige Beleg-IDs.')
         }
@@ -367,7 +377,33 @@ export function validatePackets(value: unknown): Packet[] {
         }
       }
     }
-    for (const field of ['display_output_sha256', 'displayed_reflection_sha256']) {
+    if (rubric.version === '1.2.0' && ['assessment_quality', 'feedback_quality'].includes(packet.task)
+      && (packet.pipeline_version !== '2.0.0' || packet.evidence_synthesis === undefined
+        || typeof packet.display_synthesis_sha256 !== 'string')) throw new Error('Versionierte Dokumentpakete benötigen Pipelineversion und Synthese mit Prüfsumme.')
+    if (packet.evidence_synthesis !== undefined) {
+      if (!['assessment_quality', 'feedback_quality'].includes(packet.task)) throw new Error('Generierte Synthesen sind vor unabhängiger Referenzbewertung nicht zulässig.')
+      if (packet.synthesis_display_allowed !== false && packet.task !== 'assessment_quality') throw new Error('Die Synthese darf ohne Protokollentscheidung nur für Task B freigegeben werden.')
+      if (typeof packet.synthesis_display_allowed !== 'boolean') throw new Error('Explizite Synthesefreigabe fehlt.')
+      if (!Array.isArray(packet.evidence_synthesis) || packet.evidence_synthesis.length !== 3) throw new Error('Synthese benötigt drei Dimensionen.')
+      identifiers(packet.evidence_synthesis, 'dimension_id')
+      const segmentIds = new Set(reflection.segments.map(segment => String(object(segment).segment_id)))
+      const fields = ['demonstrated_depth', 'development', 'integrative_coherence', 'limitations', 'uncertainty']
+      for (const dimension of packet.evidence_synthesis) {
+        const entry = exact(dimension, ['dimension_id', ...fields])
+        if (!['SW', 'UA', 'HA'].includes(String(entry.dimension_id))) throw new Error('Unbekannte Synthesedimension.')
+        for (const field of fields) {
+          const claims = entry[field]
+          if (!Array.isArray(claims) || (fields.slice(0, 3).includes(field) && !claims.length)) throw new Error('Ungültige Syntheseaussagen.')
+          for (const claim of claims) {
+            const value = exact(claim, ['interpretation', 'evidence_refs'])
+            text(value.interpretation)
+            if (!Array.isArray(value.evidence_refs) || !value.evidence_refs.length
+              || !value.evidence_refs.every(id => typeof id === 'string' && segmentIds.has(id))) throw new Error('Synthese verweist auf unbekannte Belege.')
+          }
+        }
+      }
+    }
+    for (const field of ['display_output_sha256', 'displayed_reflection_sha256', 'display_synthesis_sha256']) {
       if (packet[field] !== undefined && (typeof packet[field] !== 'string' || !/^[a-f0-9]{64}$/.test(packet[field] as string))) throw new Error('Ungültige Prüfsumme.')
     }
   }
@@ -628,6 +664,7 @@ export async function checkPacketHashes(packets: Packet[]) {
   for (const packet of packets) {
     if (packet.displayed_reflection_sha256 && await sha256(packet.reflection) !== packet.displayed_reflection_sha256) throw new Error('Die Prüfsumme einer Reflexion stimmt nicht mit dem angezeigten Inhalt überein.')
     if (packet.display_output_sha256 && await sha256(packet.output ?? packet.human_feedback) !== packet.display_output_sha256) throw new Error('Die Prüfsumme einer Ausgabe stimmt nicht mit dem angezeigten Inhalt überein.')
+    if (packet.display_synthesis_sha256 && await sha256(packet.evidence_synthesis) !== packet.display_synthesis_sha256) throw new Error('Die Prüfsumme der Synthese stimmt nicht mit ihrem Inhalt überein.')
   }
 }
 

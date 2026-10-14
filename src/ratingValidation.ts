@@ -20,7 +20,7 @@ export function visibleModellingBands(
     const annotation = byDimension.get(dimensionId)
     const band = annotation?.level?.trim() ?? ''
     if (!annotation || annotation.known === false || !/^[1-3]$/.test(band)) return []
-    return [{ dimension_id: dimensionId, label: dimensionLabels[dimensionId] ?? dimensionId, band }]
+    return [{ dimension_id: dimensionId, label: dimensionLabels[dimensionId] ?? dimensionId, band: ({ '1': 'A', '2': 'B', '3': 'C' } as Record<string, string>)[band] }]
   })
 }
 

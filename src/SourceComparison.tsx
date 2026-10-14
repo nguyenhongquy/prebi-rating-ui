@@ -126,7 +126,9 @@ export function OutputViewer({ packet, onSelection, evidence, selectedItem, onSh
       {packet.task === 'assessment_quality' ? <div className="assessment-output">{packet.output?.dimensions?.map(dimension => <article className={`assessment-dimension${selectedItem === dimension.dimension_id ? ' selected-feedback' : ''}`} key={dimension.dimension_id}>
         <header><strong>{dimension.dimension_id} · {packet.rubric.dimensions.find(item => item.dimension_id === dimension.dimension_id)?.name ?? dimension.dimension_id}</strong></header>
         <div className="assessment-score-pair"><div><span>Expertenreferenz</span><strong>{assessmentReference?.scores?.[dimension.dimension_id]?.toLocaleString('de-DE', { maximumFractionDigits: 1 }) ?? '—'}</strong></div><div><span>Generierte Einschätzung</span><strong>{dimension.score.toLocaleString('de-DE', { maximumFractionDigits: 20 })}</strong></div></div>
-        <p>{dimension.justification}</p><EvidenceReferences ids={dimension.evidence_segment_ids} segments={packet.reflection.segments} {...evidence} onShow={() => onShowItem?.(dimension.dimension_id, dimension.evidence_segment_ids)} onActivate={id => { onShowItem?.(dimension.dimension_id, dimension.evidence_segment_ids); evidence.onActivate(id) }} />
+        <p>{dimension.justification}</p>
+        {dimension.intermediate_score_explanation && <p><strong>Einordnung des Zwischenwerts: </strong>{dimension.intermediate_score_explanation}</p>}
+        <EvidenceReferences ids={dimension.evidence_segment_ids} segments={packet.reflection.segments} {...evidence} onShow={() => onShowItem?.(dimension.dimension_id, dimension.evidence_segment_ids)} onActivate={id => { onShowItem?.(dimension.dimension_id, dimension.evidence_segment_ids); evidence.onActivate(id) }} />
       </article>)}</div> : packet.task === 'feedback_quality' ? <div className="feedback-output">{(['strengths', 'weaknesses', 'suggestions'] as const).map(component => <section className="feedback-component" key={component}>
         <FeedbackHeading component={component} />
         {(packet.output?.[component] ?? []).length ? packet.output?.[component]?.map((item, index) => <div className={`feedback-item${selectedItem === `${component}-${index}` ? ' selected-feedback' : ''}`} key={`${component}-${index}`}>
@@ -134,6 +136,23 @@ export function OutputViewer({ packet, onSelection, evidence, selectedItem, onSh
           <EvidenceReferences ids={item.evidence_segment_ids ?? []} segments={packet.reflection.segments} {...evidence} onShow={() => onShowItem?.(`${component}-${index}`, item.evidence_segment_ids ?? [])} onActivate={id => { onShowItem?.(`${component}-${index}`, item.evidence_segment_ids ?? []); evidence.onActivate(id) }} />
         </div>) : <p className="empty-component">Keine Einträge in diesem Abschnitt.</p>}
       </section>)}</div> : <SourceText text={packet.human_feedback ?? ''} label="Menschliches Feedback" onSelect={event => onSelection(event, 'human_feedback', 0)} />}
+      {packet.synthesis_display_allowed === true && packet.task === 'assessment_quality' && packet.evidence_synthesis && <details className="evidence-synthesis">
+        <summary>Qualitative Evidenzsynthese (getrennt von Bewertung und Feedback)</summary>
+        {packet.evidence_synthesis.map(dimension => <section key={dimension.dimension_id}>
+          <h3>{dimension.dimension_id}</h3>
+          {([
+            ['demonstrated_depth', 'Gezeigte Reflexionstiefe'],
+            ['development', 'Ausarbeitung und Begründung'],
+            ['integrative_coherence', 'Zusammenhänge'],
+            ['limitations', 'Grenzen'],
+            ['uncertainty', 'Unsicherheit'],
+          ] as const).map(([field, label]) => <section key={field}><h4>{label}</h4>
+            {dimension[field].map((claim, index) => <div key={index}><p>{claim.interpretation}</p>
+              <EvidenceReferences ids={claim.evidence_refs} segments={packet.reflection.segments} {...evidence} />
+            </div>)}
+          </section>)}
+        </section>)}
+      </details>}
     </div>
     {packet.task === 'feedback_quality' && historicalFeedback !== undefined && <section className="historical-feedback-panel" aria-label="Historisches Feedback">
       <h3>Historisches Feedback</h3><p>{historicalFeedback}</p>

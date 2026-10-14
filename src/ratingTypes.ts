@@ -76,13 +76,24 @@ export type SegmentAnnotationSummaryDimension = {
   positive_band_count: number
   band_counts: Record<'0' | '1' | '2' | '3', number>
   band_percentages: Record<'1' | '2' | '3', number>
-  mean_positive_band: number | null
+  mean_positive_band?: number | null
+  distinct_assigned_segment_count?: number
 }
 export type SegmentAnnotationSummary = {
   aggregation_unit: 'candidate_annotation'
+  counting_note?: string
   dimensions: SegmentAnnotationSummaryDimension[]
 }
 export type FeedbackItem = { text: string; evidence_segment_ids?: string[] }
+export type SynthesisClaim = { interpretation: string; evidence_refs: string[] }
+export type DimensionSynthesis = {
+  dimension_id: 'SW' | 'UA' | 'HA'
+  demonstrated_depth: SynthesisClaim[]
+  development: SynthesisClaim[]
+  integrative_coherence: SynthesisClaim[]
+  limitations: SynthesisClaim[]
+  uncertainty: SynthesisClaim[]
+}
 export type EvidenceSpan = { start_character: number; end_character: number; quote: string }
 export type CriterionAnswer = { score: number | null; unable_to_judge: boolean; comment: string }
 export type ReferenceScoreAnswer = { score: number | null; rationale: string; evidence_segment_ids: string[] }
@@ -122,10 +133,22 @@ export type Packet = {
   score_dimensions?: Array<{ dimension_id: string; label: string }>
   segment_annotations?: SegmentAnnotation[]
   segment_annotation_summary?: SegmentAnnotationSummary
+  pipeline_version?: string
+  evidence_synthesis?: DimensionSynthesis[]
+  synthesis_display_allowed?: boolean
+  display_synthesis_sha256?: string
   reflection: { segments: Segment[] }
-  rubric: { version: string; dimensions: Array<{ dimension_id: string; name: string; description: string; bands: Record<string, string> }> }
+  rubric: {
+    version: string
+    level?: 'document'
+    rubric_id?: string
+    glossary?: Record<string, string>
+    scale?: Record<string, unknown>
+    assessment_principles?: Record<string, unknown>
+    dimensions: Array<{ dimension_id: string; name: string; description: string; bands: Record<string, string> }>
+  }
   output?: {
-    dimensions?: Array<{ dimension_id: string; score: number; justification: string; evidence_segment_ids: string[] }>
+    dimensions?: Array<{ dimension_id: string; score: number; justification: string; evidence_segment_ids: string[]; intermediate_score_explanation?: string | null }>
     strengths?: FeedbackItem[]
     weaknesses?: FeedbackItem[]
     suggestions?: FeedbackItem[]
