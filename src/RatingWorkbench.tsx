@@ -690,7 +690,7 @@ export default function RatingWorkbench() {
       <WorkflowHelp consensus={consensusMode} />
       {exportOpen && <ExportSummary total={consensusMode ? consensusPacketStates.length : packets.length} complete={completeCount} started={startedCount - completeCount} consensus={consensusSummary} onExport={exportSession} onClose={() => setExportOpen(false)} />}
       {packet && draft && <div className="rating-layout"><PacketNavigator label={TASK_LABELS[taskFilter]} states={packetStates} activeIndex={packetIndex} onNavigate={navigatePacket} consensusMode={consensusMode} consensusStatuses={consensusMode ? consensusStates : undefined}>
-        <details className="protocol-details"><summary>Bewertungsleitfaden</summary><pre>{packet.human_protocol}</pre></details><details className="rubric-details"><summary>Bewertungsraster</summary>{packet.rubric.dimensions.map(dimension => <div className="rubric-dimension" key={dimension.dimension_id}><strong>{dimension.dimension_id} · {dimension.name}</strong><p>{dimension.description}</p><dl>{Object.entries(dimension.bands).map(([band, description]) => <div key={band}><dt>{band}</dt><dd>{description}</dd></div>)}</dl></div>)}</details>
+        <details className="protocol-details"><summary>Bewertungsleitfaden</summary><pre>{packet.human_protocol}</pre></details><details className="rubric-details"><summary>Bewertungsraster · {packet.rubric.version}</summary><RubricPrinciples rubric={packet.rubric} />{packet.rubric.dimensions.map(dimension => <div className="rubric-dimension" key={dimension.dimension_id}><strong>{dimension.dimension_id} · {dimension.name}</strong><p>{dimension.description}</p><dl>{Object.entries(dimension.bands).map(([band, description]) => <div key={band}><dt>{band}</dt><dd>{description}</dd></div>)}</dl></div>)}</details>
       </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} referenceEvidence={referenceDimension && referenceAnswer && !consensusFinalized ? { ids: referenceAnswer.evidence_segment_ids, label: referenceDimension.label, onToggle: toggleReferenceEvidence } : undefined} assessmentReference={taskBReference ? {
         state: taskBReference.state,
         scores: taskBReference.current?.scores ?? null,
@@ -714,20 +714,20 @@ export default function RatingWorkbench() {
 }
 
 function ModellingBandSummary({ summary }: { summary: NonNullable<Packet['segment_annotation_summary']> }) {
-  return <section className="modelling-band-summary" aria-label="Modellierungssplit: Bandhäufigkeiten und positive Mittelwerte">
+  return <section className="modelling-band-summary" aria-label="Modellierungssplit: kategoriales Evidenzprofil">
     <h3>Referenz aus dem Modellierungssplit</h3>
     <div className="modelling-band-summary-scroll">
       <table>
-        <thead><tr><th>Dimension</th><th>N</th><th>Band 1</th><th>Band 2</th><th>Band 3</th><th>Mittlerer positiver Bandwert</th></tr></thead>
+        <thead><tr><th>Dimension</th><th>Zugeordnete Kandidaten</th><th>Band A</th><th>Band B</th><th>Band C</th><th>Verschiedene zugeordnete Segmente</th></tr></thead>
         <tbody>{summary.dimensions.map(dimension => <tr key={dimension.dimension_id}>
           <th scope="row">{dimension.dimension_id}</th>
           <td>{dimension.positive_band_count}</td>
           {(['1', '2', '3'] as const).map(band => <td key={band}>{dimension.band_counts[band]} <small>({dimension.band_percentages[band].toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)</small></td>)}
-          <td>{dimension.mean_positive_band === null ? '–' : dimension.mean_positive_band.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          <td>{dimension.distinct_assigned_segment_count ?? '–'}</td>
         </tr>)}</tbody>
       </table>
     </div>
-    <p>N zeigt je Dimension die Zahl positiver, bekannter Segment-Kandidat:innen in den Bändern 1–3. Prozentwerte und Mittelwert beziehen sich nur auf dieses N; Band 0 wird nicht angezeigt.</p>
+    <p>Prozentwerte beziehen sich auf bekannte, dieser Dimension zugeordnete Kandidatenannotationen. Mehrere Kandidaten desselben Segments sind keine unabhängigen Belege. A/B/C sind ordinale Evidenzkategorien, keine Dokumentnoten; A kann fehlende oder unzureichende Leistung enthalten.</p>
   </section>
 }
 
@@ -750,6 +750,19 @@ function ScoreCoding({ packet, draft, activeIndex, updateDraft, selectedSpan, sp
       </article>
     })}</div>
   </div>
+}
+
+function RubricPrinciples({ rubric }: { rubric: Packet['rubric'] }) {
+  function statements(value: unknown): string[] {
+    if (typeof value === 'string') return [value]
+    if (value && typeof value === 'object') return Object.values(value).flatMap(statements)
+    return []
+  }
+  const principles = statements(rubric.assessment_principles)
+  return <>
+    {Array.isArray(rubric.scale?.allowed_scores) && <p>Zulässige Dokumentwerte: {rubric.scale.allowed_scores.join(' · ')}</p>}
+    {principles.length > 0 && <section><h3>Grundsätze und Zwischenwerte</h3>{principles.map((text, index) => <p key={index}>{text}</p>)}</section>}
+  </>
 }
 
 function ReferenceRating({ packet, draft, activeIndex, updateDraft }: {
