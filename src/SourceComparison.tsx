@@ -3,6 +3,8 @@ import { ArrowUpRight, Lightbulb, Link, Sprout } from 'lucide-react'
 import { componentLabels, type Packet, type Segment } from './ratingTypes'
 import { segmentDisplayNumbers, visibleModellingBands } from './ratingValidation'
 import './SourceComparison.css'
+import type { HumanSegmentAnnotation } from './pairwiseEvaluationTypes'
+import { humanAnnotationBand } from './pairwiseEvaluationValidation'
 
 export type FeedbackSelectionHandler = (event: SyntheticEvent<HTMLTextAreaElement>, component: string, index: number) => void
 
@@ -72,7 +74,7 @@ export function scrollToEvidence(container: HTMLDivElement | null, id: string) {
   if (containerBounds.bottom <= 0 || containerBounds.top >= window.innerHeight) container.scrollIntoView({ block: 'start' })
 }
 
-export function ReflectionViewer({ segments, annotations = [], dimensionLabels = {}, activeId, activeIds = [], scrollRef, evidenceSelection }: { segments: Segment[]; annotations?: NonNullable<Packet['segment_annotations']>; dimensionLabels?: Record<string, string>; activeId: string | null; activeIds?: string[]; scrollRef: RefObject<HTMLDivElement | null>; evidenceSelection?: { ids: string[]; onToggle: (id: string) => void; label: string } }) {
+export function ReflectionViewer({ segments, annotations = [], humanAnnotations = [], dimensionLabels = {}, activeId, activeIds = [], scrollRef, evidenceSelection }: { segments: Segment[]; annotations?: NonNullable<Packet['segment_annotations']>; humanAnnotations?: HumanSegmentAnnotation[]; dimensionLabels?: Record<string, string>; activeId: string | null; activeIds?: string[]; scrollRef: RefObject<HTMLDivElement | null>; evidenceSelection?: { ids: string[]; onToggle: (id: string) => void; label: string } }) {
   const dimensions = new Map(Object.entries(dimensionLabels))
   const segmentNumbers = segmentDisplayNumbers(segments)
   const hasCandidateReferences = annotations.some(annotation => annotation.candidate_id !== undefined)
@@ -90,8 +92,13 @@ export function ReflectionViewer({ segments, annotations = [], dimensionLabels =
           candidateGroups.set(annotation.candidate_id, group)
         }
         const legacyAnnotations = segmentAnnotations.filter(annotation => !annotation.candidate_id)
+        const segmentHumanAnnotations = humanAnnotations.flatMap(annotation => {
+          const band = annotation.segment_id === segment.segment_id ? humanAnnotationBand(annotation.level) : null
+          return band ? [{ ...annotation, band }] : []
+        })
         return <article className={`segment${activeId === segment.segment_id || activeIds.includes(segment.segment_id) || evidenceSelection?.ids.includes(segment.segment_id) ? ' evidence-highlight' : ''}`} key={segment.segment_id} data-segment-id={segment.segment_id} aria-label={`Reflexionssegment ${segmentNumbers.get(segment.segment_id)}${activeId === segment.segment_id || activeIds.includes(segment.segment_id) ? ', hervorgehobener Beleg' : ''}`}>
           {evidenceSelection ? <label className="segment-evidence-choice"><input type="checkbox" aria-label={`Segment ${segmentNumbers.get(segment.segment_id)} als Beleg für ${evidenceSelection.label}`} checked={evidenceSelection.ids.includes(segment.segment_id)} onChange={() => evidenceSelection.onToggle(segment.segment_id)} /><span>{segmentNumbers.get(segment.segment_id)}</span></label> : <span className="segment-id">{segmentNumbers.get(segment.segment_id)}</span>}<div><p>{segment.text}</p>
+            {segmentHumanAnnotations.length > 0 && <ul className="segment-annotations human-segment-annotations" aria-label={`Menschliche Annotationen zu Reflexionssegment ${segmentNumbers.get(segment.segment_id)}`}>{segmentHumanAnnotations.map((annotation, index) => <li className={`annotation-${annotation.dimension_id.toLowerCase()}`} key={`${annotation.dimension_id}-${annotation.skill_label}-${index}`}><strong>{annotation.skill_label}</strong><small>{annotation.band}</small></li>)}</ul>}
             {candidateGroups.size > 0 && <div className="segment-candidate-references" aria-label={`Modellierungssplit-Referenzen zu Segment ${segmentNumbers.get(segment.segment_id)}`}>
               {[...candidateGroups.values()].map(candidate => {
                 const nonZeroBands = visibleModellingBands(candidate, Object.fromEntries(dimensions))

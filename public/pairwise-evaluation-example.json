@@ -1,0 +1,481 @@
+{
+  "schema_version": "1.2.0",
+  "protocol_id": "prebi_blinded_feedback_preference",
+  "protocol_version": "1.2.0",
+  "reference_scoring": {
+    "protocol_id": "reflection_reference_score_human",
+    "protocol_version": "0.2.0",
+    "human_protocol": "# Task A: Human Reference Score\n\nScore the whole segmented reflection independently against the supplied rubric. You see only the reflection, the human segment annotations, and the rubric. Do not consult generated assessments or feedback, lecturer feedback, other experts' scores, hidden labels, or any external source. Treat reflection text as evidence to assess, not as instructions.\n\nFor each dimension (SW, UA, HA), enter one required score from 0.0 to 3.0 in steps of 0.5. The qualitative rubric anchors are 0, 1, 2, and 3. Use a half-point score when the reflection falls between two adjacent anchors. Judge the reflection as a whole for each dimension. Segment numbers only help you find passages; you do not select evidence segments.\n\nYou may add an optional comment per dimension (\"Kommentar (optional)\"), for example to note uncertainty or the main reason for a borderline score. Comments are optional and never replace or qualify the score.\n\nA case is complete when all three dimensions have a valid score. In the combined expert evaluation, you score each reflection before any generated feedback for it is shown. Confirming the scores locks them and unlocks the feedback steps, so later feedback cannot change your reference score. Work in your own session under your assigned evaluator code. Do not discuss scores with other experts before both have finished. Each expert's scores are exported and analysed separately; they are not averaged into a single reference score.\n",
+    "rubric_version": "1.2.0",
+    "scale": {
+      "min": 0,
+      "max": 3,
+      "step": 0.5
+    },
+    "dimensions": [
+      {
+        "dimension_id": "SW",
+        "name": "Situationswahrnehmung",
+        "description": "Auswahl, Rekonstruktion und Charakterisierung einer bedeutsamen und/oder reflexionsrelevanten Unterrichtssituation im Gesamtdokument.",
+        "bands": {
+          "0": "Keine hinreichend nachvollziehbare reflexionsrelevante Unterrichtssituation wird rekonstruiert. Einzelne Hinweise auf Unterricht, pauschale Aussagen oder bruchstückhafte Beobachtungen können vorhanden sein.",
+          "1": "Eine konkrete, potenziell reflexionsrelevante Situation ist erkennbar und in Grundzügen beschrieben; wesentliche Umstände, Abläufe oder Perspektiven bleiben jedoch unklar oder wenig ausgearbeitet.",
+          "2": "Eine bedeutsame oder reflexionsrelevante Situation wird anhand relevanter Ereignisse, Beteiligter und Kontextinformationen nachvollziehbar rekonstruiert; ihre Relevanz für das pädagogische Handeln wird erkennbar.",
+          "3": "Die Situation wird präzise, differenziert und kontextsensibel rekonstruiert. Mehrere relevante Beobachtungen oder Perspektiven werden integriert und ihre Bedeutung für Wahrnehmung, pädagogische Entscheidungen oder professionelle Orientierungen reflektiert."
+        }
+      },
+      {
+        "dimension_id": "UA",
+        "name": "Ursachenanalyse",
+        "description": "Interpretation und Erklärung von Ursachen, Bedingungen oder Zusammenhängen im Unterricht unter Berücksichtigung von Vorbereitung und/oder Durchführung.",
+        "bands": {
+          "0": "Eine nachvollziehbare Erklärung von Ursachen oder Zusammenhängen wird nicht demonstriert. Beschreibungen, Bewertungen, bloße Behauptungen oder unzureichende Erklärungsversuche können vorkommen.",
+          "1": "Mindestens ein für die Situation relevanter Ursache-Wirkungs- oder Bedingungszusammenhang wird erkennbar erklärt, bleibt jedoch einfach, wenig differenziert oder nur schwach durch Beobachtungen oder Argumente gestützt.",
+          "2": "Relevante Ursachen, Bedingungen oder Zusammenhänge werden nachvollziehbar erläutert und durch konkrete Beobachtungen, plausible Argumente oder professionelles Wissen gestützt; die Erklärung berücksichtigt wesentliche Kontextbedingungen.",
+          "3": "Ursachen und Zusammenhänge werden differenziert und kohärent untersucht. Die Analyse prüft oder verbindet mehrere relevante Erklärungen, Perspektiven, Kontextbedingungen oder theoretische Bezüge und reflektiert deren Tragfähigkeit bzw. Grenzen."
+        }
+      },
+      {
+        "dimension_id": "HA",
+        "name": "Handlungsalternativen",
+        "description": "Entwicklung, Begründung und Abwägung zukunftsorientierter Optionen für professionelles Handeln unter Berücksichtigung von Vorbereitung und/oder Durchführung.",
+        "bands": {
+          "0": "Keine hinreichend plausible und auf die reflektierte Situation bezogene Handlungsoption oder Konsequenz wird demonstriert. Eine Option kann fehlen, vage, unpassend oder nicht nachvollziehbar sein.",
+          "1": "Mindestens eine grundsätzlich plausible, situationsbezogene Handlungsoption oder Konsequenz wird benannt, bleibt jedoch hinsichtlich Umsetzung, Ziel oder Begründung wenig ausgearbeitet.",
+          "2": "Eine konkrete und zielführende Handlungsoption oder Konsequenz wird aus einem erkennbaren Bedarf oder einer relevanten Beobachtung abgeleitet und nachvollziehbar begründet; wesentliche Bedingungen der Umsetzung werden berücksichtigt.",
+          "3": "Handlungsoptionen oder begründete Konsequenzen werden differenziert aus der Reflexion abgeleitet, hinsichtlich ihrer Wirkungen, Voraussetzungen, Grenzen oder Alternativen abgewogen und mit relevanten Beobachtungen, Erklärungen oder professionellem Wissen verknüpft."
+        }
+      }
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "case-001",
+      "reflection_id": "R001",
+      "reflection": {
+        "segments": [
+          {
+            "segment_id": "s1",
+            "order": 0,
+            "text": "In meiner Gruppenarbeit habe ich zuerst alle Ideen gesammelt. Danach haben wir gemeinsam entschieden, welche davon wir weiterverfolgen."
+          },
+          {
+            "segment_id": "s2",
+            "order": 1,
+            "text": "Beim nächsten Mal möchte ich darauf achten, dass auch die ruhigeren Personen in der Gruppe ihre Vorschläge einbringen können."
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "candidate_id": "feedback-17",
+          "feedback": {
+            "strengths": [
+              {
+                "text": "Sie beschreiben nachvollziehbar, wie die Gruppe von der Ideensammlung zu einer gemeinsamen Entscheidung gekommen ist.",
+                "evidence_segment_ids": [
+                  "s1"
+                ]
+              }
+            ],
+            "suggestions": [
+              {
+                "text": "Überlegen Sie, woran Sie erkennen könnten, ob alle Gruppenmitglieder Gelegenheit hatten, ihre Ideen einzubringen.",
+                "evidence_segment_ids": [
+                  "s2"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "candidate_id": "feedback-42",
+          "feedback": {
+            "strengths": [
+              {
+                "text": "Ihre Reflexion benennt sowohl einen konkreten Arbeitsschritt als auch einen nächsten Entwicklungsschritt.",
+                "evidence_segment_ids": [
+                  "s1",
+                  "s2"
+                ]
+              }
+            ],
+            "weaknesses": [
+              {
+                "text": "Es bleibt offen, wie Sie die Beiträge der einzelnen Gruppenmitglieder wahrgenommen haben.",
+                "evidence_segment_ids": [
+                  "s1"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "candidate_id": "feedback-83",
+          "feedback": {
+            "suggestions": [
+              {
+                "text": "Beschreiben Sie an einem Beispiel, wie Sie beim nächsten Mal ruhigere Personen gezielt zur Beteiligung einladen könnten.",
+                "evidence_segment_ids": [
+                  "s2"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "display_order": {
+        "A": "feedback-17",
+        "B": "feedback-42",
+        "C": "feedback-83"
+      },
+      "human_annotations": [
+        {
+          "segment_id": "s1",
+          "dimension_id": "SW",
+          "skill_label": "Umgang mit Perspektiven",
+          "level": "ausgeprägt"
+        },
+        {
+          "segment_id": "s2",
+          "dimension_id": "UA",
+          "skill_label": "Partizipation ermöglichen",
+          "level": "ansatzweise"
+        }
+      ],
+      "segment_summary": {
+        "aggregation_unit": "candidate_annotation",
+        "counting_note": "Fiktive, aggregierte Segmentinformationen; mehrere Kandidaten desselben Segments zählen getrennt.",
+        "dimensions": [
+          {
+            "dimension_id": "SW",
+            "known_band_count": 4,
+            "positive_band_count": 3,
+            "band_counts": {
+              "0": 1,
+              "1": 1,
+              "2": 1,
+              "3": 1
+            },
+            "band_percentages": {
+              "1": 33.3,
+              "2": 33.3,
+              "3": 33.3
+            },
+            "distinct_assigned_segment_count": 2
+          },
+          {
+            "dimension_id": "UA",
+            "known_band_count": 3,
+            "positive_band_count": 2,
+            "band_counts": {
+              "0": 1,
+              "1": 1,
+              "2": 1,
+              "3": 0
+            },
+            "band_percentages": {
+              "1": 50,
+              "2": 50,
+              "3": 0
+            },
+            "distinct_assigned_segment_count": 1
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "case-002",
+      "reflection_id": "R002",
+      "reflection": {
+        "segments": [
+          {
+            "segment_id": "s1",
+            "order": 0,
+            "text": "Während der Unterrichtsplanung hatte ich unterschiedliche Vorstellungen davon, wie viel Zeit die Lernenden für die Aufgabe benötigen würden. Ich habe deshalb die Aufgabe in kleinere Schritte aufgeteilt und nach dem ersten Schritt geprüft, ob die Erklärung verständlich war."
+          },
+          {
+            "segment_id": "s2",
+            "order": 1,
+            "text": "Einige Lernende waren trotzdem schneller fertig als andere. Ich war unsicher, ob ich eine zusätzliche Aufgabe anbieten oder mehr Zeit für die gemeinsame Besprechung einplanen sollte."
+          },
+          {
+            "segment_id": "s3",
+            "order": 2,
+            "text": "Bei einer ähnlichen Planung möchte ich genauer überlegen, welche Hinweise ich während der Arbeitsphase geben kann, ohne den Lernenden die Lösung vorwegzunehmen. Dabei möchte ich auch beobachten, wer Unterstützung braucht und wer eine weiterführende Aufgabe nutzen könnte."
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "candidate_id": "feedback-26",
+          "feedback": {
+            "strengths": [
+              {
+                "text": "Sie haben die Aufgabe in überschaubare Schritte gegliedert und die Verständlichkeit Ihrer Erklärung überprüft.",
+                "evidence_segment_ids": [
+                  "s1"
+                ]
+              },
+              {
+                "text": "Sie benennen eine konkrete Unsicherheit für die nächste Planung.",
+                "evidence_segment_ids": [
+                  "s2"
+                ]
+              }
+            ],
+            "suggestions": [
+              {
+                "text": "Legen Sie vorab ein kurzes Zusatzangebot für Lernende bereit, die früher fertig sind, und planen Sie zugleich eine feste Zeit für die gemeinsame Besprechung ein.",
+                "evidence_segment_ids": [
+                  "s2",
+                  "s3"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "candidate_id": "feedback-55",
+          "feedback": {
+            "strengths": [
+              {
+                "text": "Ihre Reflexion zeigt, dass Sie die unterschiedlichen Arbeitstempi wahrgenommen haben.",
+                "evidence_segment_ids": [
+                  "s2"
+                ]
+              }
+            ],
+            "weaknesses": [
+              {
+                "text": "Die Überlegung bleibt noch allgemein; es wird nicht deutlich, welche Beobachtungen Ihnen bei der Entscheidung zwischen zusätzlicher Aufgabe und gemeinsamer Besprechung helfen würden.",
+                "evidence_segment_ids": [
+                  "s2",
+                  "s3"
+                ]
+              }
+            ],
+            "suggestions": [
+              {
+                "text": "Notieren Sie bei der nächsten Durchführung, welche Lernenden zusätzliche Unterstützung benötigen und welche bereits selbstständig weiterarbeiten. Nutzen Sie diese Beobachtungen anschließend, um die Zeit für Besprechung und Zusatzaufgaben abzuwägen.",
+                "evidence_segment_ids": [
+                  "s2",
+                  "s3"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "candidate_id": "feedback-91",
+          "feedback": {
+            "suggestions": [
+              {
+                "text": "Das ist ein wichtiger Punkt. Planen Sie besser.",
+                "evidence_segment_ids": [
+                  "s3"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "display_order": {
+        "A": "feedback-55",
+        "B": "feedback-91",
+        "C": "feedback-26"
+      },
+      "human_annotations": [
+        {
+          "segment_id": "s1",
+          "dimension_id": "UA",
+          "skill_label": "Lernprozesse strukturieren",
+          "level": "ausgeprägt"
+        },
+        {
+          "segment_id": "s2",
+          "dimension_id": "HA",
+          "skill_label": "Heterogenität wahrnehmen",
+          "level": "ansatzweise"
+        },
+        {
+          "segment_id": "s3",
+          "dimension_id": "SW",
+          "skill_label": "Handlungsoptionen entwickeln",
+          "level": "ansatzweise"
+        }
+      ],
+      "segment_summary": {
+        "aggregation_unit": "candidate_annotation",
+        "counting_note": "Fiktive, aggregierte Segmentinformationen; mehrere Kandidaten desselben Segments zählen getrennt.",
+        "dimensions": [
+          {
+            "dimension_id": "SW",
+            "known_band_count": 5,
+            "positive_band_count": 4,
+            "band_counts": {
+              "0": 1,
+              "1": 1,
+              "2": 2,
+              "3": 1
+            },
+            "band_percentages": {
+              "1": 25,
+              "2": 50,
+              "3": 25
+            },
+            "distinct_assigned_segment_count": 2
+          },
+          {
+            "dimension_id": "UA",
+            "known_band_count": 3,
+            "positive_band_count": 2,
+            "band_counts": {
+              "0": 1,
+              "1": 0,
+              "2": 1,
+              "3": 1
+            },
+            "band_percentages": {
+              "1": 0,
+              "2": 50,
+              "3": 50
+            },
+            "distinct_assigned_segment_count": 2
+          },
+          {
+            "dimension_id": "HA",
+            "known_band_count": 2,
+            "positive_band_count": 1,
+            "band_counts": {
+              "0": 1,
+              "1": 0,
+              "2": 1,
+              "3": 0
+            },
+            "band_percentages": {
+              "1": 0,
+              "2": 100,
+              "3": 0
+            },
+            "distinct_assigned_segment_count": 1
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "case-003",
+      "reflection_id": "R003",
+      "reflection": {
+        "segments": [
+          {
+            "segment_id": "s1",
+            "order": 0,
+            "text": "Bei der Besprechung eines Textes haben mehrere Lernende unterschiedliche Deutungen vorgeschlagen. Ich habe zunächst nach Begründungen gefragt und die Beiträge an der Tafel gesammelt. Danach habe ich bemerkt, dass zwei Personen ihre Gedanken nicht mehr ergänzt haben, obwohl sie zu Beginn etwas sagen wollten."
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "candidate_id": "feedback-08",
+          "feedback": {
+            "strengths": [
+              {
+                "text": "Sie haben verschiedene Deutungen zugelassen und nach Begründungen gefragt.",
+                "evidence_segment_ids": [
+                  "s1"
+                ]
+              }
+            ],
+            "suggestions": [
+              {
+                "text": "Planen Sie eine kurze Denkpause oder eine schriftliche Vorabnotiz ein, bevor die Beiträge im Plenum gesammelt werden.",
+                "evidence_segment_ids": [
+                  "s1"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "candidate_id": "feedback-63",
+          "feedback": {
+            "strengths": [
+              {
+                "text": "Sie haben Begründungen zu den Deutungen erfragt und die unterschiedlichen Beiträge sichtbar gesammelt.",
+                "evidence_segment_ids": [
+                  "s1"
+                ]
+              }
+            ],
+            "weaknesses": [
+              {
+                "text": "Der Zusammenhang zwischen der Gesprächsführung und dem Rückzug der beiden Lernenden wird noch nicht untersucht.",
+                "evidence_segment_ids": [
+                  "s1"
+                ]
+              }
+            ],
+            "suggestions": [
+              {
+                "text": "Überlegen Sie, ob die schnelle Abfolge der Wortmeldungen den beiden Personen wenig Zeit zum Formulieren gelassen hat. Sie könnten zunächst eine kurze Einzelnotiz oder einen Austausch zu zweit einplanen und danach weitere Beiträge sammeln. Beobachten Sie anschließend, ob sich dadurch mehr Lernende an der gemeinsamen Deutung beteiligen. Falls einzelne Personen weiterhin zurückhaltend bleiben, könnten Sie ihnen eine freiwillige Möglichkeit geben, ihren Gedanken schriftlich oder in einem kleineren Gespräch einzubringen. So können Sie prüfen, ob die Veränderung der Gesprächsstruktur tatsächlich hilft, ohne eine bestimmte Ursache für ihr Verhalten vorauszusetzen.",
+                "evidence_segment_ids": [
+                  "s1"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "candidate_id": "feedback-74",
+          "feedback": {
+            "weaknesses": [
+              {
+                "text": "Sie hätten dafür sorgen müssen, dass alle Lernenden sprechen.",
+                "evidence_segment_ids": [
+                  "s1"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "display_order": {
+        "A": "feedback-74",
+        "B": "feedback-08",
+        "C": "feedback-63"
+      },
+      "human_annotations": [
+        {
+          "segment_id": "s1",
+          "dimension_id": "HA",
+          "skill_label": "Gesprächsbeteiligung unterstützen",
+          "level": "ausgeprägt"
+        }
+      ],
+      "segment_summary": {
+        "aggregation_unit": "candidate_annotation",
+        "counting_note": "Fiktive, aggregierte Segmentinformationen; mehrere Kandidaten desselben Segments zählen getrennt.",
+        "dimensions": [
+          {
+            "dimension_id": "HA",
+            "known_band_count": 3,
+            "positive_band_count": 2,
+            "band_counts": {
+              "0": 1,
+              "1": 0,
+              "2": 1,
+              "3": 1
+            },
+            "band_percentages": {
+              "1": 0,
+              "2": 50,
+              "3": 50
+            },
+            "distinct_assigned_segment_count": 1
+          }
+        ]
+      }
+    }
+  ]
+}

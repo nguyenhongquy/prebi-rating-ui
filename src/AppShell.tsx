@@ -17,7 +17,7 @@ export function AppShell({ workflow, context, children }: {
         <img className="institution-logo" src={`${import.meta.env.BASE_URL}ph-ludwigsburg-logo.png`} alt="Pädagogische Hochschule Ludwigsburg" />
         <div className="app-name"><ProjectLogo /></div>
       </div>
-      <div className="app-context"><strong>{workflow === 'Expert evaluation' ? 'Expertenbewertung' : 'Feedbackprüfung'}</strong>{context}<nav className="workflow-navigation" aria-label="Arbeitsbereich"><a href="?workflow=evaluation" aria-current={workflow === 'Expert evaluation' ? 'page' : undefined}>Expertenbewertung</a><a href="?workflow=review" aria-current={workflow === 'Lecturer review' ? 'page' : undefined}>Feedbackprüfung</a></nav></div>
+      <div className="app-context"><strong>{workflow === 'Pairwise evaluation' ? 'PReBi Expertenevaluation' : workflow === 'Expert evaluation' ? 'Expertenbewertung' : 'Feedbackprüfung'}</strong>{context}<nav className="workflow-navigation" aria-label="Arbeitsbereich"><a href="?workflow=pairwise" aria-current={workflow === 'Pairwise evaluation' ? 'page' : undefined}>Expertenevaluation</a><a href="?workflow=review" aria-current={workflow === 'Lecturer review' ? 'page' : undefined}>Feedbackprüfung</a></nav></div>
     </header>
     {children}
   </div>

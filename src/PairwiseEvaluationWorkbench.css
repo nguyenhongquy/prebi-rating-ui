@@ -1,0 +1,123 @@
+.pairwise-start-content { display: grid; gap: 16px; }
+.pairwise-start-content .start-description { margin: 0; }
+.pairwise-start-help { margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--rating-line); font-size: 14px; line-height: 1.6; }
+.pairwise-start-help summary { cursor: pointer; color: var(--ph-moss); font-weight: 700; }
+.pairwise-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.pairwise-save-indicator { font-size: 12px; }
+.pairwise-save-indicator.save-error { color: #822d27; }
+.pairwise-toolbar { min-height: 60px; padding: 10px 24px; display: grid; grid-template-columns: minmax(180px, 1fr) minmax(120px, .6fr) auto; align-items: center; gap: 20px; border-bottom: 1px solid var(--rating-line); background: #f5f7f3; }
+.pairwise-toolbar > div:first-child { display: grid; gap: 3px; color: var(--ph-moss); font-size: 13px; }
+.pairwise-toolbar > div:first-child span, .pairwise-toolbar-actions > span { color: var(--rating-muted); font-size: 11px; }
+.pairwise-save-error { padding: 9px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; color: #822d27; background: #f8e8e6; border-bottom: 1px solid #e9c8c4; font-size: 12px; }
+.pairwise-toolbar progress { width: 100%; height: 8px; accent-color: var(--ph-green); }
+.pairwise-toolbar-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.pairwise-workspace { min-height: calc(100vh - 191px); display: grid; grid-template-columns: minmax(300px, .85fr) minmax(0, 1.35fr); align-items: start; }
+.pairwise-reflection { position: sticky; top: 0; min-width: 0; height: calc(100svh - 60px); min-height: 560px; padding: 18px 20px; display: flex; flex-direction: column; background: white; border-right: 1px solid var(--rating-line); }
+.pairwise-case-summary { flex: 0 0 auto; margin-bottom: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: var(--ph-moss); font-size: 12px; }
+.pairwise-case-summary strong { font-weight: 600; }
+.pairwise-reflection .source-panel { min-height: 0; height: auto; flex: 1; }
+.pairwise-reflection .source-panel .source-scroll { padding-right: 8px; }
+.pairwise-reflection .source-panel .segment { grid-template-columns: 30px minmax(0, 1fr); }
+.pairwise-reflection .source-panel .segment p { font-size: 15px; }
+.pairwise-reflection .human-segment-annotations { margin-top: 7px; }
+.pairwise-reflection .human-segment-annotations li { flex-wrap: wrap; }
+.pairwise-reflection .modelling-band-summary { flex: 0 0 auto; max-height: 38%; margin: 0 0 12px; padding: 0 0 12px; overflow: auto; border-top: 0; border-bottom: 1px solid var(--rating-line); }
+.pairwise-reflection .modelling-band-summary h3 { margin: 0 0 8px; color: var(--ph-moss); font-size: 14px; }
+.pairwise-reflection .modelling-band-summary-scroll { max-width: 100%; overflow-x: auto; }
+.pairwise-reflection .modelling-band-summary table { width: 100%; min-width: 560px; border-collapse: collapse; color: #344139; font-size: 11px; text-align: left; }
+.pairwise-reflection .modelling-band-summary th, .pairwise-reflection .modelling-band-summary td { padding: 6px; border-bottom: 1px solid #e1e7e1; white-space: nowrap; }
+.pairwise-reflection .modelling-band-summary thead th { color: #536158; font-size: 10px; }
+.pairwise-reflection .modelling-band-summary tbody th { color: var(--ph-moss); }
+.pairwise-reflection .modelling-band-summary td small { color: #657169; font-size: 10px; }
+.pairwise-reflection .modelling-band-summary > p { margin: 8px 0 0; color: #657169; font-size: 10px; line-height: 1.4; }
+.pairwise-case-navigation { flex: 0 0 auto; padding-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--rating-line); }
+.pairwise-case-navigation > span { color: var(--rating-muted); font-size: 11px; }
+.pairwise-task-workspace { min-width: 0; padding: 0 24px 28px; }
+.pairwise-task-tabs { position: sticky; top: 0; z-index: 2; margin: 0 -24px 18px; padding: 10px 24px; display: flex; gap: 8px; border-bottom: 1px solid var(--rating-line); background: #f5f7f3; }
+.pairwise-task-tabs button, .pairwise-candidate-tabs button, .pairwise-pair-tabs button { min-height: 46px; padding: 7px 12px; display: grid; align-content: center; gap: 3px; color: #536158; background: white; border: 1px solid #cbd2cc; border-radius: 4px; text-align: left; font-size: 13px; font-weight: 700; }
+.pairwise-task-tabs button.active, .pairwise-candidate-tabs button.active, .pairwise-pair-tabs button.active { color: #14583d; border-color: var(--ph-green); box-shadow: inset 0 -2px var(--ph-green); }
+.pairwise-task-tabs button:disabled { cursor: not-allowed; opacity: .45; }
+.pairwise-step-note { margin: 0 0 16px; color: #684b16; font-size: 13px; line-height: 1.5; }
+.pairwise-task-content { max-width: 1050px; margin: 0 auto; }
+.pairwise-task-content > h2 { margin: 0 0 6px; color: var(--ph-moss); font-size: 22px; }
+.pairwise-task-content > p { margin: 0 0 18px; font-size: 15px; line-height: 1.55; }
+.pairwise-candidate-tabs, .pairwise-pair-tabs { margin-bottom: 18px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pairwise-candidate-tabs button, .pairwise-pair-tabs button { min-height: 56px; }
+.pairwise-candidate-tabs small, .pairwise-pair-tabs small { color: var(--rating-muted); font-size: 11px; font-weight: 500; }
+.pairwise-release-panel, .pairwise-comparison-panel { min-width: 0; }
+.pairwise-feedback-card { min-width: 0; padding: 15px 16px; border: 1px solid var(--rating-line); border-radius: 4px; background: white; }
+.pairwise-feedback-card > h3 { margin: 0 0 12px; color: var(--ph-moss); font-size: 16px; }
+.pairwise-feedback-component + .pairwise-feedback-component { margin-top: 15px; padding-top: 12px; border-top: 1px solid #e7ece7; }
+.pairwise-feedback-component h3 { margin: 0 0 8px; }
+.pairwise-feedback-component ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.pairwise-feedback-component li { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.pairwise-choice-group { margin: 18px 0 0; padding: 0; border: 0; }
+.pairwise-choice-group legend { margin-bottom: 8px; color: #344139; font-size: 13px; font-weight: 700; }
+.pairwise-choice-group label { min-height: 48px; margin-top: 6px; padding: 8px 12px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--rating-line); border-radius: 4px; background: white; font-size: 14px; line-height: 1.4; }
+.pairwise-choice-group label.selected { border-color: var(--ph-green); background: #edf5ee; }
+.pairwise-choice-group input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--ph-green); }
+.pairwise-explanation { margin-top: 14px; display: grid; gap: 7px; color: #344139; font-size: 13px; font-weight: 700; }
+.pairwise-explanation > span { color: var(--rating-muted); font-size: 11px; font-weight: 400; }
+.pairwise-explanation textarea { width: 100%; padding: 9px 10px; resize: vertical; border: 1px solid var(--rating-line); border-radius: 4px; background: white; line-height: 1.5; }
+.pairwise-feedback-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
+.preference-options { margin-top: 16px; }
+.pairwise-task-footer { max-width: 1050px; margin: 24px auto 0; padding-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--rating-line); }
+.pairwise-task-footer > span { display: inline-flex; align-items: center; gap: 6px; color: #43614e; font-size: 12px; }
+.pairwise-task-footer > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 1000px) {
+  .pairwise-toolbar { grid-template-columns: minmax(160px, 1fr) minmax(100px, .5fr); }
+  .pairwise-toolbar-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .pairwise-workspace { grid-template-columns: minmax(250px, .75fr) minmax(0, 1.25fr); }
+  .pairwise-task-workspace { padding-right: 18px; padding-left: 18px; }
+  .pairwise-task-tabs { margin-right: -18px; margin-left: -18px; padding-right: 18px; padding-left: 18px; }
+  .pairwise-feedback-pair { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .pairwise-toolbar { padding: 12px 16px; }
+  .pairwise-workspace { display: flex; flex-direction: column; }
+  .pairwise-reflection { position: static; width: 100%; height: 55svh; min-height: 380px; padding: 16px; border-right: 0; border-bottom: 1px solid var(--rating-line); }
+  .pairwise-reflection .modelling-band-summary { max-height: 44%; }
+  .pairwise-task-workspace { width: 100%; padding: 0 16px 24px; }
+  .pairwise-task-tabs { margin: 0 -16px 18px; padding: 10px 16px; }
+  .pairwise-task-tabs button { flex: 1; }
+  .pairwise-task-footer { align-items: flex-start; flex-direction: column; }
+  .pairwise-task-footer > div { width: 100%; justify-content: flex-start; }
+}
+@media (max-width: 480px) {
+  .pairwise-toolbar { grid-template-columns: 1fr; gap: 9px; }
+  .pairwise-toolbar-actions { grid-column: auto; }
+  .pairwise-toolbar-actions .icon-button { flex: 1 1 130px; }
+  .pairwise-task-tabs { flex-direction: column; }
+  .pairwise-candidate-tabs, .pairwise-pair-tabs { gap: 5px; }
+  .pairwise-candidate-tabs button, .pairwise-pair-tabs button { padding: 6px; font-size: 11px; }
+  .pairwise-candidate-tabs small, .pairwise-pair-tabs small { font-size: 9px; }
+  .pairwise-feedback-card { padding: 12px; }
+}
+
+.pairwise-reference-guide { margin: 0 0 16px; padding: 10px 12px; border: 1px solid var(--rating-line); border-radius: 4px; background: #f8faf7; font-size: 13px; }
+.pairwise-reference-guide summary { cursor: pointer; color: var(--ph-moss); font-weight: 700; }
+.pairwise-reference-guide pre { max-height: 360px; margin: 10px 0 0; overflow: auto; white-space: pre-wrap; font: inherit; line-height: 1.55; }
+.pairwise-reference-locked { padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-radius: 4px; background: #edf5ee; color: #14583d !important; font-size: 13px !important; font-weight: 700; }
+.pairwise-reference-dimension { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--rating-line); border-left-width: 4px; border-radius: 4px; background: white; }
+.pairwise-reference-dimension.annotation-sw { border-left-color: #176b4a; }
+.pairwise-reference-dimension.annotation-ua { border-left-color: #a65b19; }
+.pairwise-reference-dimension.annotation-ha { border-left-color: #4e648c; }
+.pairwise-reference-dimension header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.pairwise-reference-dimension h3 { margin: 0; color: var(--ph-moss); font-size: 17px; }
+.pairwise-reference-dimension header output { color: var(--ph-moss); font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pairwise-reference-dimension > p { margin: 6px 0 8px; font-size: 14px; line-height: 1.55; }
+.pairwise-reference-anchors { margin: 0; display: grid; gap: 4px; font-size: 13px; line-height: 1.5; }
+.pairwise-reference-anchors > div { padding: 3px 6px; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; border-left: 3px solid transparent; }
+.pairwise-reference-anchors > div.surrounding { border-left-color: var(--ph-green); background: #edf4ee; }
+.pairwise-reference-anchors dt { font-weight: 700; }
+.pairwise-reference-anchors dd { margin: 0; }
+.pairwise-reference-scale { margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; border: 0; }
+.pairwise-reference-scale legend { width: 100%; margin-bottom: 6px; color: #344139; font-size: 13px; font-weight: 700; }
+.pairwise-reference-scale label { min-width: 54px; padding: 7px 10px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--rating-line); border-radius: 4px; background: white; font-size: 14px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.pairwise-reference-scale label.selected { border-color: var(--ph-green); background: #edf5ee; font-weight: 700; }
+.pairwise-reference-scale input { accent-color: var(--ph-green); }
+.pairwise-reference-scale:disabled label { cursor: default; opacity: .75; }
+.pairwise-reference-confirm { margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.pairwise-reference-confirm p { margin: 0; color: #45534a; font-size: 13px; }
+.pairwise-reference-confirm button { display: inline-flex; align-items: center; gap: 8px; }

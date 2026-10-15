@@ -12,9 +12,10 @@ import SourceComparison from './SourceComparison'
 import ConsensusControls from './ConsensusControls'
 import FeedbackComparisonControls from './FeedbackComparisonControls'
 import { componentLabels, type ConsensusCaseState, type Draft, type Packet, type RatingTask, type ScoreAnswer, type SpanComment } from './ratingTypes'
-import { answerError, canonicalJson, emptyDraft, evaluationSteps, isValidReferenceScore, parseReferenceScoreInput, referenceAnchorScores, REFERENCE_SCORE_SCALE, responseForDraft, segmentDisplayNumbers, type CaseState } from './ratingValidation'
+import { answerError, canonicalJson, emptyDraft, evaluationSteps, isValidReferenceScore, parseReferenceScoreInput, referenceAnchorScores, REFERENCE_SCORE_SCALE, responseForDraft, type CaseState } from './ratingValidation'
 import RatingProgress from './RatingProgress'
 import PacketNavigator from './PacketNavigator'
+import SegmentSummaryPanel from './SegmentSummaryPanel'
 import { readSession, writeSession, listSessions } from './localSessions'
 import { WorkflowHelp, ResumePrompt, ExportSummary, PersistenceStatus } from './WorkflowSupport'
 import { assessmentReferenceState, assertConsensusBlinding, assertSourcesMatch, bundleHash, captureAssessmentReference, captureC1Snapshot, checkPacketHashes, consensusAnswerErrors, consensusCaseState, consensusResearchExport, draftFromResponse, emptyAssessmentReferences, emptyC1Snapshots, emptyConsensus, emptyFeedbackComparison, ensureFeedbackComparisonCase, enterFeedbackComparison, expertCaseState, feedbackC1GateReady, finalizeFeedbackComparison, finalizedAssessmentReference, finalizeConsensus, flagConsensus, historicalFeedbackVisible, latestC1Snapshot, legacyDraft, reopenConsensus, reopenFeedbackComparison, researchExportPackets, resumeConsensus, sessionKey, validateDraft, validatePackets, validateSession, type ExpertSession, type PendingEditor } from './expertSession'
@@ -643,8 +644,6 @@ export default function RatingWorkbench() {
     flagged: consensusPacketStates.filter(state => state === 'flagged').length,
     notStarted: consensusPacketStates.filter(state => state === 'not_started').length,
   } : undefined
-  const referenceDimension = packet?.task === 'reflection_reference_score' ? packet.score_dimensions?.[criterionIndex] : undefined
-  const referenceAnswer = referenceDimension && draft ? draft.referenceAnswers[referenceDimension.dimension_id] : undefined
   const taskBReference = packet?.task === 'assessment_quality' && session && consensusMode
     ? assessmentReferenceState(packet, session)
     : undefined
@@ -664,13 +663,6 @@ export default function RatingWorkbench() {
       || !c2Case || c2Case.historical_feedback_revealed_at) return
     updateCurrentC2Case(comparison => ({ ...comparison, historical_feedback_revealed_at: new Date().toISOString() }))
   }, [feedbackC2Active, packet?.packet_id, packet?.task, packet?.human_feedback, c2Case?.historical_feedback_revealed_at])
-  function toggleReferenceEvidence(id: string) {
-    if (!referenceDimension || !draft || !referenceAnswer) return
-    const evidence = new Set(referenceAnswer.evidence_segment_ids)
-    if (evidence.has(id)) evidence.delete(id)
-    else evidence.add(id)
-    updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [referenceDimension.dimension_id]: { ...referenceAnswer, evidence_segment_ids: [...evidence] } } })
-  }
 
   return <AppShell workflow="Expert evaluation" context={session ? <><span>{TASK_LABELS[taskFilter]} · {doneCount} / {taskPackets.length} {consensusMode ? 'Konsens erreicht' : 'Fälle vollständig'}</span><label className="annotator-field">{consensusMode ? 'Panel-ID' : 'Bewertungscode'}<input value={consensusMode ? session.panel_id ?? session.evaluator_id : session.evaluator_id} disabled autoComplete="off" /></label></> : undefined}>
     {error && <div className="rating-error" role="alert">{error}</div>}
@@ -691,14 +683,14 @@ export default function RatingWorkbench() {
       {exportOpen && <ExportSummary total={consensusMode ? consensusPacketStates.length : packets.length} complete={completeCount} started={startedCount - completeCount} consensus={consensusSummary} onExport={exportSession} onClose={() => setExportOpen(false)} />}
       {packet && draft && <div className="rating-layout"><PacketNavigator label={TASK_LABELS[taskFilter]} states={packetStates} activeIndex={packetIndex} onNavigate={navigatePacket} consensusMode={consensusMode} consensusStatuses={consensusMode ? consensusStates : undefined}>
         <details className="protocol-details"><summary>Bewertungsleitfaden</summary><pre>{packet.human_protocol}</pre></details><details className="rubric-details"><summary>Bewertungsraster · {packet.rubric.version}</summary><RubricPrinciples rubric={packet.rubric} />{packet.rubric.dimensions.map(dimension => <div className="rubric-dimension" key={dimension.dimension_id}><strong>{dimension.dimension_id} · {dimension.name}</strong><p>{dimension.description}</p><dl>{Object.entries(dimension.bands).map(([band, description]) => <div key={band}><dt>{band}</dt><dd>{description}</dd></div>)}</dl></div>)}</details>
-      </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} referenceEvidence={referenceDimension && referenceAnswer && !consensusFinalized ? { ids: referenceAnswer.evidence_segment_ids, label: referenceDimension.label, onToggle: toggleReferenceEvidence } : undefined} assessmentReference={taskBReference ? {
+      </PacketNavigator><main className="rating-main"><SourceComparison key={packet.packet_id} packet={packet} onSelection={handleFeedbackSelection} assessmentReference={taskBReference ? {
         state: taskBReference.state,
         scores: taskBReference.current?.scores ?? null,
         onConfirm: consensusFinalized && taskBReference.current && (taskBReference.state === 'changed' || taskBReference.state === 'available')
           ? confirmCurrentAssessmentReference
           : undefined,
       } : undefined} historicalFeedback={feedbackC2Active && packet.task === 'feedback_quality' && packet.human_feedback?.trim() && c2Case?.historical_feedback_revealed_at ? packet.human_feedback : undefined}><section className={`task-panel${feedbackC2Active && packet.task === 'feedback_quality' ? ' c2-panel' : ''}`} aria-label={feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}><div className="panel-title"><span>{feedbackC2Active && packet.task === 'feedback_quality' ? 'Historischer Vergleich' : 'Ihre Bewertung'}</span></div>
-        {packet.task === 'reflection_reference_score' && packet.segment_annotation_summary && <ModellingBandSummary summary={packet.segment_annotation_summary} />}
+        {packet.task === 'reflection_reference_score' && packet.segment_annotation_summary && <SegmentSummaryPanel dimensions={packet.segment_annotation_summary.dimensions} />}
         {feedbackC2Active && packet.task === 'feedback_quality' ? packet.human_feedback?.trim() && c2Snapshot && c2Case
           ? <FeedbackComparisonControls packet={packet} snapshot={c2Snapshot} comparison={c2Case} onDecision={decideCurrentC2} onScoreChange={changeCurrentC2Score} onReasonChange={changeCurrentC2Reason} onFinalize={finalizeCurrentC2} onReopen={reopenCurrentC2} />
           : <div className="comparison-unavailable" role="status"><strong>Vergleich noch nicht verfügbar</strong><p>Für diesen Fall liegt kein historisches Feedback vor.</p></div>
@@ -711,24 +703,6 @@ export default function RatingWorkbench() {
       </section><footer className="rating-footer"><PersistenceStatus state={persistence} /><div>{packet.task !== 'feedback_implied_score' && <button className="icon-button" disabled={criterionIndex === 0} onClick={() => navigateCriterion(criterionIndex - 1)} title="Vorheriges Kriterium" aria-label="Vorheriges Kriterium"><ChevronLeft size={16} /></button>}{packet.task !== 'feedback_implied_score' && criterionIndex < steps.length - 1 ? <button className="submit-button" onClick={nextCriterion}>Nächstes Kriterium<ChevronRight size={16} /></button> : <button className="submit-button" onClick={nextCase}>Nächster Fall<ChevronRight size={16} /></button>}</div></footer></SourceComparison></main></div>}
     </>}
   </AppShell>
-}
-
-function ModellingBandSummary({ summary }: { summary: NonNullable<Packet['segment_annotation_summary']> }) {
-  return <section className="modelling-band-summary" aria-label="Modellierungssplit: kategoriales Evidenzprofil">
-    <h3>Referenz aus dem Modellierungssplit</h3>
-    <div className="modelling-band-summary-scroll">
-      <table>
-        <thead><tr><th>Dimension</th><th>Zugeordnete Kandidaten</th><th>Band A</th><th>Band B</th><th>Band C</th><th>Verschiedene zugeordnete Segmente</th></tr></thead>
-        <tbody>{summary.dimensions.map(dimension => <tr key={dimension.dimension_id}>
-          <th scope="row">{dimension.dimension_id}</th>
-          <td>{dimension.positive_band_count}</td>
-          {(['1', '2', '3'] as const).map(band => <td key={band}>{dimension.band_counts[band]} <small>({dimension.band_percentages[band].toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)</small></td>)}
-          <td>{dimension.distinct_assigned_segment_count ?? '–'}</td>
-        </tr>)}</tbody>
-      </table>
-    </div>
-    <p>Prozentwerte beziehen sich auf bekannte, dieser Dimension zugeordnete Kandidatenannotationen. Mehrere Kandidaten desselben Segments sind keine unabhängigen Belege. A/B/C sind ordinale Evidenzkategorien, keine Dokumentnoten; A kann fehlende oder unzureichende Leistung enthalten.</p>
-  </section>
 }
 
 function ScoreCoding({ packet, draft, activeIndex, updateDraft, selectedSpan, spanComment, setSpanComment, addSpanComment }: {
@@ -781,7 +755,6 @@ function ReferenceRating({ packet, draft, activeIndex, updateDraft }: {
   const selectedAnchors = new Set(referenceAnchorScores(answer.score, bands.map(([score]) => Number(score))))
   const answerLabel = `${dimension.dimension_id} · ${dimension.label}`
   const inputId = `reference-score-${dimension.dimension_id}`
-  const segmentNumbers = segmentDisplayNumbers(packet.reflection.segments)
   function setReferenceScore(score: number | null) {
     if (score !== null && !isValidReferenceScore(score)) return
     setScoreInput(score === null ? '' : score.toFixed(1).replace('.', ','))
@@ -809,8 +782,7 @@ function ReferenceRating({ packet, draft, activeIndex, updateDraft }: {
         <label className="field reference-score-input" htmlFor={inputId}><span>Zahlwert <small>0,0 bis 3,0</small></span><input id={inputId} type="text" inputMode="decimal" value={scoreInput} aria-label={`${answerLabel} · Zahlwert`} aria-invalid={Boolean(scoreInputError)} aria-describedby={`${inputId}-help ${inputId}-error`} onChange={event => editReferenceScore(event.currentTarget.value)} /><small id={`${inputId}-help`}>Leeres Feld = unbeantwortet</small>{scoreInputError && <small className="reference-score-error" id={`${inputId}-error`} role="alert">{scoreInputError}</small>}</label>
       </div>
     </section>
-    <label className="field"><span>{dimension.label} · Begründung <small>Optional</small></span><textarea rows={3} value={answer.rationale} onChange={event => updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimension.dimension_id]: { ...answer, rationale: event.target.value } } })} /></label>
-    <div className="reference-evidence-summary"><strong>Belegsegmente <small>Optional</small></strong>{answer.evidence_segment_ids.length ? answer.evidence_segment_ids.map(id => <button className="text-button" type="button" key={id} onClick={() => updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimension.dimension_id]: { ...answer, evidence_segment_ids: answer.evidence_segment_ids.filter(item => item !== id) } } })}>Segment {segmentNumbers.get(id)} entfernen</button>) : <span>Noch keine Segmente ausgewählt</span>}</div>
+    <label className="field reference-comment"><span>Kommentar (optional)</span><textarea rows={3} value={answer.rationale} aria-label={`${answerLabel} · Kommentar (optional)`} onChange={event => updateDraft({ referenceAnswers: { ...draft.referenceAnswers, [dimension.dimension_id]: { ...answer, rationale: event.target.value } } })} /></label>
   </article>
 }
 

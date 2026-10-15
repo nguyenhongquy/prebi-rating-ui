@@ -207,10 +207,10 @@ test('synthetic evaluation packets support complete valid responses', () => {
   }
 })
 
-test('reference scoring omits the generated-output viewer', () => {
+test('reference scoring omits generated-output feedback while the new workflow can show its supplied human annotations', () => {
   const source = readFileSync(new URL('../src/SourceComparison.tsx', import.meta.url), 'utf8')
   assert.match(source, /const reflectionOnly = packet\.task === 'reflection_reference_score'/)
   assert.match(source, /!reflectionOnly && <OutputViewer/)
-  assert.doesNotMatch(source, /annotation\.skill_label/)
+  assert.match(source, /humanAnnotations/)
   assert.ok(referencePacket.segment_annotations.every(annotation => !Object.hasOwn(annotation, 'skill_label')))
 })
