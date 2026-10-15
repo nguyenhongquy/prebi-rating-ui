@@ -337,6 +337,51 @@ test('reference responses export and restore independently from feedback-implied
   assert.equal(draftFromResponse(reference, responseForDraft(reference, decimalDraft)).referenceAnswers.SW.score, 2.5)
 })
 
+test('simplified reference scoring: optional comments, score-only completion, persistence and export', async () => {
+  const draft = emptyDraft(reference)
+  assert.deepEqual(Object.keys(draft.referenceAnswers), ['SW', 'UA', 'HA'])
+  draft.referenceAnswers.SW.rationale = 'Nur ein Kommentar.'
+  assert.equal(caseState(reference, draft), 'in_progress')
+  assert.match(answerError(reference, draft, 0), /Punktwert/)
+  draft.referenceAnswers.SW.score = 2.5
+  draft.referenceAnswers.UA.score = 0
+  assert.equal(caseState(reference, draft), 'in_progress')
+  draft.referenceAnswers.HA.score = 3
+  draft.referenceAnswers.SW.rationale = ''
+  assert.equal(caseState(reference, draft), 'complete')
+  for (const score of [1.25, 3.5, -0.5]) {
+    const invalid = structuredClone(draft)
+    invalid.referenceAnswers.UA.score = score
+    assert.equal(caseState(reference, invalid), 'in_progress')
+  }
+
+  draft.referenceAnswers.UA.rationale = 'Optionaler Kommentar.'
+  const session = await fresh()
+  session.drafts[reference.packet_id] = draft
+  const restored = await validateSession(JSON.parse(JSON.stringify(session)))
+  assert.deepEqual(restored.drafts[reference.packet_id], draft)
+  assert.equal(caseState(reference, restored.drafts[reference.packet_id]), 'complete')
+  assert.deepEqual(responseForDraft(reference, draft).scores, [
+    { dimension_id: 'SW', score: 2.5, rationale: '', evidence_segment_ids: [] },
+    { dimension_id: 'UA', score: 0, rationale: 'Optionaler Kommentar.', evidence_segment_ids: [] },
+    { dimension_id: 'HA', score: 3, rationale: '', evidence_segment_ids: [] },
+  ])
+
+  const older = structuredClone(draft)
+  older.referenceAnswers.SW.evidence_segment_ids = [reference.reflection.segments[0].segment_id]
+  session.drafts[reference.packet_id] = older
+  const reopened = await validateSession(JSON.parse(JSON.stringify(session)))
+  assert.deepEqual(reopened.drafts[reference.packet_id].referenceAnswers.SW.evidence_segment_ids, [reference.reflection.segments[0].segment_id])
+  assert.deepEqual(responseForDraft(reference, older).scores[0].evidence_segment_ids, [reference.reflection.segments[0].segment_id])
+  assert.deepEqual(draftFromResponse(reference, responseForDraft(reference, older)).referenceAnswers, older.referenceAnswers)
+
+  const workbench = readFileSync(new URL('../src/RatingWorkbench.tsx', import.meta.url), 'utf8')
+  const referenceForm = workbench.slice(workbench.indexOf('function ReferenceRating'), workbench.indexOf('function QualityRating'))
+  assert.match(referenceForm, /Kommentar \(optional\)/)
+  assert.doesNotMatch(referenceForm, /evidence_segment_ids|Begründung|Beleg/)
+  assert.doesNotMatch(workbench, /referenceEvidence=/)
+})
+
 test('legacy drafts without referenceAnswers restore with an empty task-specific map', async () => {
   const session = await fresh()
   const oldDraft = structuredClone(session.drafts[quality.packet_id])

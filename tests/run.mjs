@@ -16,10 +16,18 @@ try {
   if (reviewCompilation.status !== 0) throw new Error('Could not compile review contract for tests.')
   const reviewModulePath = join(temporaryDirectory, 'reviewContract.cjs')
   renameSync(join(temporaryDirectory, 'reviewContract.js'), reviewModulePath)
-  const result = spawnSync(process.execPath, ['--test', 'tests/ratingValidation.test.mjs', 'tests/reviewContract.test.mjs', 'tests/expertSession.test.mjs', 'tests/reviewSession.test.mjs'], {
+  const pairwiseCompilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/pairwiseEvaluationSession.ts', 'src/pairwiseEvaluationValidation.ts', '--target', 'ES2022', '--module', 'CommonJS', '--moduleResolution', 'Node', '--ignoreDeprecations', '6.0', '--esModuleInterop', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
+  if (pairwiseCompilation.status !== 0) throw new Error('Could not compile pairwise evaluation modules for tests.')
+  const result = spawnSync(process.execPath, ['--test', 'tests/ratingValidation.test.mjs', 'tests/reviewContract.test.mjs', 'tests/expertSession.test.mjs', 'tests/reviewSession.test.mjs', 'tests/pairwiseEvaluation.test.mjs'], {
     cwd: projectRoot,
     stdio: 'inherit',
-    env: { ...process.env, PREBI_RATING_VALIDATION_MODULE: pathToFileURL(modulePath).href, PREBI_REVIEW_MODULE: pathToFileURL(reviewModulePath).href },
+    env: {
+      ...process.env,
+      PREBI_RATING_VALIDATION_MODULE: pathToFileURL(modulePath).href,
+      PREBI_REVIEW_MODULE: pathToFileURL(reviewModulePath).href,
+      PREBI_PAIRWISE_VALIDATION_MODULE: join(temporaryDirectory, 'pairwiseEvaluationValidation.js'),
+      PREBI_PAIRWISE_SESSION_MODULE: join(temporaryDirectory, 'pairwiseEvaluationSession.js'),
+    },
   })
   process.exitCode = result.status ?? 1
 } finally {
