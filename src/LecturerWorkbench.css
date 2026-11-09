@@ -1,0 +1,27 @@
+.lecturer-workbench { max-width: 1500px; margin: auto; padding: 1.5rem; }
+.lecturer-demo { background: var(--ph-lilac); padding: 1rem; border: 1px solid var(--ph-purple); border-radius: .5rem; line-height: 1.6; }
+.lecturer-demo strong { display: block; }
+.lecturer-toolbar, .lecturer-actions, .lecturer-steps { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 1rem 0; }
+.lecturer-workbench button { border: 1px solid var(--ph-green); border-radius: .35rem; padding: .65rem .85rem; background: white; color: var(--ph-moss); }
+.lecturer-workbench button:disabled { opacity: .55; cursor: not-allowed; }
+.lecturer-steps button[aria-current] { background: var(--ph-green); color: white; }
+.lecturer-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 1.25rem; align-items: start; }
+.lecturer-columns > * { min-width: 0; }
+.lecturer-card { background: white; border: 1px solid #b5c5b8; border-radius: .5rem; padding: 1.25rem; margin-bottom: 1rem; overflow-wrap: anywhere; }
+.lecturer-workbench p { line-height: 1.6; white-space: pre-wrap; }
+.lecturer-workbench h1:focus { outline: none; }
+.lecturer-field { display: grid; gap: .5rem; margin: 1rem 0; }
+.lecturer-field select, .lecturer-field textarea { width: 100%; padding: .6rem; border: 1px solid #65776b; border-radius: .25rem; background: white; color: var(--ph-moss); }
+.lecturer-field textarea { min-height: 7rem; resize: vertical; }
+.lecturer-check { display: flex; align-items: start; gap: .6rem; margin: .8rem 0; line-height: 1.5; }
+.lecturer-check input { flex-shrink: 0; margin-top: .3rem; }
+.lecturer-candidates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; }
+.lecturer-candidate, .lecturer-edit-item { border: 1px solid #b5c5b8; border-radius: .3rem; padding: 1rem; margin: 1rem 0; }
+.lecturer-error { background: #fff0ef; border: 2px solid #9c2525; color: #651515; padding: 1rem; margin: 1rem 0; }
+.lecturer-warning { background: #fff2ce; color: #614300; padding: .6rem; }
+.lecturer-workbench fieldset { min-width: 0; margin: 1rem 0; border: 1px solid #b5c5b8; }
+.lecturer-workbench .source-scroll { max-height: 55vh; }
+@media (max-width: 850px) {
+  .lecturer-columns, .lecturer-candidates { grid-template-columns: 1fr; }
+  .lecturer-workbench { padding: .75rem; }
+}

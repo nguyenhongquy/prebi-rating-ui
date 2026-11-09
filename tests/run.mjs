@@ -16,9 +16,9 @@ try {
   if (reviewCompilation.status !== 0) throw new Error('Could not compile review contract for tests.')
   const reviewModulePath = join(temporaryDirectory, 'reviewContract.cjs')
   renameSync(join(temporaryDirectory, 'reviewContract.js'), reviewModulePath)
-  const pairwiseCompilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/pairwiseEvaluationSession.ts', 'src/pairwiseEvaluationValidation.ts', '--target', 'ES2022', '--module', 'CommonJS', '--moduleResolution', 'Node', '--ignoreDeprecations', '6.0', '--esModuleInterop', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
+  const pairwiseCompilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/pairwiseEvaluationSession.ts', 'src/pairwiseEvaluationValidation.ts', 'src/lecturerSession.ts', 'src/lecturerService.ts', 'src/lecturerPersistence.ts', '--target', 'ES2022', '--module', 'CommonJS', '--moduleResolution', 'Node', '--ignoreDeprecations', '6.0', '--esModuleInterop', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
   if (pairwiseCompilation.status !== 0) throw new Error('Could not compile pairwise evaluation modules for tests.')
-  const result = spawnSync(process.execPath, ['--test', 'tests/ratingValidation.test.mjs', 'tests/reviewContract.test.mjs', 'tests/expertSession.test.mjs', 'tests/reviewSession.test.mjs', 'tests/pairwiseEvaluation.test.mjs'], {
+  const result = spawnSync(process.execPath, ['--test', 'tests/ratingValidation.test.mjs', 'tests/reviewContract.test.mjs', 'tests/expertSession.test.mjs', 'tests/reviewSession.test.mjs', 'tests/pairwiseEvaluation.test.mjs', 'tests/lecturerSession.test.mjs', 'tests/lecturerPersistence.test.mjs'], {
     cwd: projectRoot,
     stdio: 'inherit',
     env: {
@@ -27,6 +27,9 @@ try {
       PREBI_REVIEW_MODULE: pathToFileURL(reviewModulePath).href,
       PREBI_PAIRWISE_VALIDATION_MODULE: join(temporaryDirectory, 'pairwiseEvaluationValidation.js'),
       PREBI_PAIRWISE_SESSION_MODULE: join(temporaryDirectory, 'pairwiseEvaluationSession.js'),
+      PREBI_LECTURER_SESSION_MODULE: join(temporaryDirectory, 'lecturerSession.js'),
+      PREBI_LECTURER_SERVICE_MODULE: join(temporaryDirectory, 'lecturerService.js'),
+      PREBI_LECTURER_PERSISTENCE_MODULE: join(temporaryDirectory, 'lecturerPersistence.js'),
     },
   })
   process.exitCode = result.status ?? 1

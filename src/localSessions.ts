@@ -38,6 +38,17 @@ export async function writeSession(key: string, value: unknown): Promise<void> {
   })
 }
 
+export async function deleteSession(key: string): Promise<void> {
+  const connection = await openDatabase()
+  return new Promise((resolve, reject) => {
+    const transaction = connection.transaction('sessions', 'readwrite')
+    transaction.objectStore('sessions').delete(key)
+    transaction.oncomplete = () => resolve()
+    transaction.onabort = () => reject(transaction.error)
+    transaction.onerror = () => reject(transaction.error)
+  })
+}
+
 export async function listSessions<T>(prefix: string): Promise<Array<Entry<T>>> {
   const connection = await openDatabase()
   return new Promise((resolve, reject) => {

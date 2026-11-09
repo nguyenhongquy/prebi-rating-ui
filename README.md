@@ -1,5 +1,67 @@
 # PReBi Evaluator Guide
 
+## Lecturer workflow demo (developers)
+
+The existing evaluator remains the default. A separate **synthetic-only**
+lecturer workspace is available at `?workflow=lecturer`:
+
+```bash
+npm run dev
+# Open http://127.0.0.1:5173/?workflow=lecturer
+```
+
+It demonstrates preparation of a fixed fictional reflection, SW/UA/HA rating,
+explicit sequential G1/G2 simulation, required preference (including tie or
+neither), editing with evidence, and human-reviewed approval. Use the labeled
+G2 failure switch to exercise partial failure and explicit retry. The successful
+candidate is retained. Pending work restored after a reload is marked
+interrupted/unknown and is never automatically retried.
+
+**No PDF ingestion, real inference, HTTP integration, provider calls, approved
+rubric, student-facing export or delivery is implemented in this workspace.**
+Do not use real student material. Its read-only rubric and predictions are
+illustrative, not the approved research scoring protocol.
+
+Confirmed ratings can be reopened after a warning; doing so clears both
+candidates, comparison, draft and approval history. Changing preference retains
+the draft, requires explicit reconfirmation and makes previous approvals stale.
+Draft edits also stale approval; originals and past approval snapshots remain
+unchanged. Starting from G1/G2 or an empty draft is independent of preference.
+Unlinked items warn for human review; invalid/duplicate evidence references and
+empty feedback at approval are rejected.
+
+Exactly one demo case is saved in a distinct IndexedDB namespace
+(`lecturer-workflow::synthetic::v1`). Autosave requires IndexedDB and Web Locks
+on a secure context (localhost qualifies). Save failures and multi-tab conflicts
+are surfaced without overwriting conflicting work. Export before closing if
+saving fails, then reload to read the current local version. Unknown/corrupt
+versions are not silently migrated: explicitly restore a valid backup or delete
+the local demo case. Session backup/restore accepts only the new
+`prebi_lecturer_workflow` schema `1.0.0`, with a 5 MB UTF-8 backup limit enforced
+on imports and session changes so accepted work remains restorable; it does not
+migrate existing research/review sessions. Backups contain the whole session,
+not student-ready feedback. Browser storage is not private or guaranteed durable;
+export needed work before clearing it and delete demo data on shared devices.
+
+Implementation entry points:
+
+- [`src/LecturerWorkbench.tsx`](./src/LecturerWorkbench.tsx): five-step UI.
+- [`src/lecturerSession.ts`](./src/lecturerSession.ts): runtime validation,
+  workflow gates, provenance, invalidation and immutable snapshots.
+- [`src/lecturerService.ts`](./src/lecturerService.ts): injectable synthetic
+  service; generation receives prepared data, condition and attempt ID, never
+  lecturer ratings. The `LecturerWorkbench` service prop is a testing seam,
+  **not** an approved HTTP contract.
+- [`src/lecturerPersistence.ts`](./src/lecturerPersistence.ts): queued,
+  conflict-checked persistence using the existing storage helpers.
+
+Run `npm test` for domain/persistence tests and existing research regressions,
+and `npm run build` for type-checking and a production build. Browser checks
+were performed using the VS Code browser tools; no browser test runner was added.
+Real API integration and real-data readiness remain separately gated.
+
+## Research evaluator
+
 The app opens the blinded PReBi expert evaluation. Use the link, evaluator ID
 and bundle file provided by the research team. You do not need to install
 anything or create a GitHub account.
