@@ -7,7 +7,7 @@ lecturer workspace is available at `?workflow=lecturer`:
 
 ```bash
 npm run dev
-# Open http://127.0.0.1:5173/?workflow=lecturer
+# Open http://127.0.0.1:5174/?workflow=lecturer
 ```
 
 It demonstrates preparation of a fixed fictional reflection, SW/UA/HA rating,
@@ -17,8 +17,8 @@ G2 failure switch to exercise partial failure and explicit retry. The successful
 candidate is retained. Pending work restored after a reload is marked
 interrupted/unknown and is never automatically retried.
 
-**No PDF ingestion, real inference, HTTP integration, provider calls, approved
-rubric, student-facing export or delivery is implemented in this workspace.**
+**This demo mode does not ingest PDFs, call an API/provider, supply an approved
+rubric, export student reports or deliver feedback.**
 Do not use real student material. Its read-only rubric and predictions are
 illustrative, not the approved research scoring protocol.
 
@@ -59,6 +59,59 @@ Run `npm test` for domain/persistence tests and existing research regressions,
 and `npm run build` for type-checking and a production build. Browser checks
 were performed using the VS Code browser tools; no browser test runner was added.
 Real API integration and real-data readiness remain separately gated.
+
+## Local lecturer API integration (developers)
+
+Open `http://127.0.0.1:5174/?workflow=lecturer&source=api` after `npm run dev`.
+The existing demo and evaluator routes remain unchanged. This opt-in integration
+is for **synthetic test data only**, not authorization to use real student data.
+
+Run a compatible backend separately on `127.0.0.1:8000`. Vite proxies `/api/*`
+to that loopback service, stripping `/api`; no browser CORS change is needed.
+Vite's proxy is development-only: production/preview hosting needs its own
+same-origin `/api` routing and approved access policy. No credentials or provider
+keys belong in the frontend.
+
+The API mode:
+
+- Fetches `GET /v1/rating-materials` and uploads a selected nonempty PDF
+  (maximum 10 MiB) via multipart `POST /v1/preparations`. Client checks are
+  preliminary; the server must validate PDF contents.
+- Uses the server's scoring guide, including anchors and half-score guidance.
+  Stores rubric/guide identities, versions and hashes, preparation locations,
+  original segment order, scope and prediction labels. Out-of-scope `N` is
+  displayed distinctly from band zero.
+- Requires confirmed lecturer scores and an explicit, non-persisted
+  external-generation confirmation before sequential G1/G2 requests.
+  Generation sends the prepared document, rubric binding and opt-in; G2 also
+  sends predicted analysis. Scores, preference, edits, and derived summaries
+  are not sent. Server-side provider authorization is still required.
+- Validates response shapes, document/rubric binding, dimensions and evidence
+  before accepting a candidate. Preserves full structured output, letter and
+  provenance as well as deterministic candidate-scoped feedback items.
+- Keeps successful candidates when another request fails. Retry is explicit.
+  Requests have a 120-second client deadline and a 5 MB response limit. A
+  disconnect/deadline does not prove a provider operation stopped or was not
+  billed. Late/obsolete results are ignored by the existing attempt gates.
+
+API sessions use schema `1.1.0` and IndexedDB key
+`lecturer-workflow::api::v1.1`, separate from demo schema `1.0.0` and its storage.
+Backups retain the complete sensitive session, not the uploaded PDF. Wrong-mode
+backups and inconsistent/tampered projections are rejected, not migrated.
+These consistency checks do not authenticate unsigned browser-held predictions
+or approvals. The existing 5 MB backup limit also applies to API sessions.
+Generation confirmation must be renewed after reload, restore or replacement.
+
+Implementation: [`src/lecturerApi.ts`](./src/lecturerApi.ts). Adapter tests inject
+`fetch` and use synthetic HTTP responses, including partial failure/retry;
+`npm test` and `npm run build` validate the frontend without a backend/provider.
+The backend's injected TestClient services are not a runnable synthetic server:
+provision a development-only synthetic server separately for real HTTP E2E work.
+Do not silently substitute synthetic results when a real backend fails.
+
+Known backend dependencies: safe preparation-error HTTP mapping, deployment
+authentication/data policy, resource limits, and model provisioning remain
+separate work. Student PDF export remains unavailable.
 
 ## Research evaluator
 

@@ -8,19 +8,20 @@ import {
 } from './lecturerSession'
 import { createFakeLecturerService, type LecturerService } from './lecturerService'
 import { LecturerPersistence } from './lecturerPersistence'
+import { createHttpLecturerService } from './lecturerApi'
 import './LecturerWorkbench.css'
 
 const steps = ['Vorbereiten', 'Bewerten', 'Vergleichen', 'Überarbeiten', 'Freigeben']
 const preferenceLabels: Record<Preference, string> = { G1: 'G1 bevorzugt', G2: 'G2 bevorzugt', tie: 'Gleichwertig', neither: 'Beide ungeeignet' }
 const categoryLabels: Record<Category, string> = { strengths: 'Stärke', weaknesses: 'Entwicklungspunkt', suggestions: 'Vorschlag' }
-const statusLabels = { idle: 'Noch nicht angefragt', pending: 'Wird simuliert …', succeeded: 'Erfolgreich', failed: 'Fehlgeschlagen', interrupted: 'Unterbrochen / Ergebnis unbekannt' }
+const statusLabels = { idle: 'Noch nicht angefragt', pending: 'Anfrage läuft …', succeeded: 'Erfolgreich', failed: 'Fehlgeschlagen / ggf. Ergebnis unbekannt', interrupted: 'Unterbrochen / Ergebnis unbekannt' }
 const message = (error: unknown) => error instanceof Error ? error.message : 'Die Aktion ist fehlgeschlagen. Exportieren Sie Ihre Arbeit und versuchen Sie es erneut.'
 const newId = () => crypto.randomUUID()
 
-export default function LecturerWorkbench({ service }: { service?: LecturerService }) {
-  const defaultService = useRef(createFakeLecturerService())
+export default function LecturerWorkbench({ service, apiMode = false }: { service?: LecturerService; apiMode?: boolean }) {
+  const defaultService = useRef(apiMode ? createHttpLecturerService() : createFakeLecturerService())
   const client = service ?? defaultService.current
-  const storage = useRef(new LecturerPersistence())
+  const storage = useRef(new LecturerPersistence(apiMode ? 'api' : 'synthetic'))
   const current = useRef<LecturerSession | null>(null)
   const generation = useRef(false)
   const [session, setSession] = useState<LecturerSession | null>(null)
@@ -33,6 +34,8 @@ export default function LecturerWorkbench({ service }: { service?: LecturerServi
   const [saveStatus, setSaveStatus] = useState('Noch kein Fall')
   const [reviewed, setReviewed] = useState(false)
   const [failG2, setFailG2] = useState(false)
+  const [pdf, setPdf] = useState<File | undefined>()
+  const [authorized, setAuthorized] = useState(false)
   const [activeEvidence, setActiveEvidence] = useState<string | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const reflection = useRef<HTMLDivElement>(null)
@@ -49,7 +52,7 @@ export default function LecturerWorkbench({ service }: { service?: LecturerServi
       setReady(true)
     }).catch(caught => {
       if (active) {
-        setSaveError(`${message(caught)} Der gespeicherte Stand wird nicht automatisch überschrieben. Stellen Sie eine gültige Sicherung wieder her oder löschen Sie den lokalen Demo-Fall ausdrücklich.`)
+        setSaveError(`${message(caught)} Der gespeicherte Stand wird nicht automatisch überschrieben. Stellen Sie eine gültige Sicherung wieder her oder löschen Sie den lokalen Fall ausdrücklich.`)
         setSaveStatus('Laden fehlgeschlagen')
         setLoadFailure(true)
         setReady(true)
@@ -81,7 +84,7 @@ export default function LecturerWorkbench({ service }: { service?: LecturerServi
   }
   function act(action: (value: LecturerSession) => LecturerSession) {
     try {
-      if (!current.current) throw new Error('Öffnen Sie zuerst einen synthetischen Fall.')
+      if (!current.current) throw new Error('Bereiten Sie zuerst einen Fall vor.')
       const next = action(current.current)
       if (next !== current.current) persist(next)
       setError('')
@@ -94,7 +97,7 @@ export default function LecturerWorkbench({ service }: { service?: LecturerServi
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
       const link = document.createElement('a')
       link.href = url
-      link.download = `prebi-synthetic-session-${data.id}.json`
+      link.download = `prebi-${apiMode ? 'api' : 'synthetic'}-session-${data.id}.json`
       link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (caught) { setError(message(caught)) }
@@ -107,27 +110,31 @@ export default function LecturerWorkbench({ service }: { service?: LecturerServi
     try {
       if (file.size > MAX_BACKUP_BYTES) throw new Error('Die Sicherung überschreitet das Limit von 5 MB.')
       const restored = parseLecturerSession(JSON.parse(await file.text()))
+      if (Boolean(restored.prepared.api) !== apiMode) throw new Error('Diese Sicherung gehört zu einem anderen Workflow-Modus.')
       if ((current.current || loadFailure) && !window.confirm('Aktuellen lokalen Fall durch die Sicherung ersetzen? Nicht gesicherte oder unlesbare Arbeit geht verloren. Exportieren Sie sie bei Bedarf zuerst.')) return
       persist(restored)
+      setAuthorized(false)
       setStep(0)
       setError('')
     } catch (caught) { setError(message(caught)) }
     finally { setBusy(false) }
   }
   async function prepare() {
-    if ((current.current || loadFailure) && !window.confirm('Neuen synthetischen Fall starten? Der gesamte aktuelle lokale Stand wird ersetzt. Exportieren Sie ihn bei Bedarf zuerst.')) return
+    if (busy) return
+    if ((current.current || loadFailure) && !window.confirm('Neuen Fall starten? Der gesamte aktuelle lokale Stand wird ersetzt. Exportieren Sie ihn bei Bedarf zuerst.')) return
     setBusy(true)
-    try { persist(createLecturerSession(await client.prepare(), newId())); setStep(1); setError('') }
+    try { persist(createLecturerSession(await client.prepare(pdf), newId())); setAuthorized(false); setPdf(undefined); setStep(1); setError('') }
     catch (caught) { setError(message(caught)) }
     finally { setBusy(false) }
   }
   async function generate(only?: Condition) {
     if (generation.current || !current.current) return
+    if (apiMode && !authorized) { setError('Bestätigen Sie zunächst die autorisierte externe Erzeugung.'); return }
     generation.current = true
     setBusy(true)
     setError('')
     const id = current.current.id
-    const simulationClient = failG2 && !service ? createFakeLecturerService({ failOnce: ['G2'] }) : client
+    const simulationClient = failG2 && !service && !apiMode ? createFakeLecturerService({ failOnce: ['G2'] }) : client
     setFailG2(false)
     try {
       for (const condition of only ? [only] : CONDITIONS) {
@@ -137,7 +144,7 @@ export default function LecturerWorkbench({ service }: { service?: LecturerServi
         const pending = beginAttempt(current.current, condition, attemptId)
         persist(pending)
         try {
-          const result = await simulationClient.generate(structuredClone(pending.prepared), condition, attemptId)
+          const result = await simulationClient.generate(structuredClone(pending.prepared), condition, attemptId, apiMode && authorized)
           if (current.current) persist(finishAttempt(current.current, id, condition, attemptId, { result }))
         } catch (caught) {
           if (current.current) persist(finishAttempt(current.current, id, condition, attemptId, { error: message(caught) }))
@@ -167,15 +174,17 @@ export default function LecturerWorkbench({ service }: { service?: LecturerServi
   const draftCurrent = Boolean(session?.draft && session.comparison && session.draft.comparisonRevision === session.comparison.revision)
   const isApproved = session ? approvalCurrent(session) : false
 
-  return <AppShell workflow="Lecturer generation">
+  return <AppShell workflow={apiMode ? 'Lecturer API' : 'Lecturer generation'}>
     <main className="lecturer-workbench">
-      <aside className="lecturer-demo" aria-label="Demohinweis"><strong>Synthetische Demo – keine echten Studierendendaten verwenden.</strong> Keine PDF-Verarbeitung, keine Modellinferenz, keine API- oder Provideraufrufe. Rubrik und Vorhersagen sind illustrativ. Freigabe ist keine Zustellung.</aside>
+      <aside className="lecturer-demo" aria-label="Betriebsmodus">{apiMode
+        ? <><strong>Lokale API-Integration – nur synthetische Testdaten verwenden.</strong> PDF und Erzeugungsanfragen gehen an den konfigurierten Backend-Dienst. Ein echter Backend-Dienst kann Modelle und externe Provider aufrufen. Keine Freigabe für echte Studierendendaten. Freigabe ist keine Zustellung.</>
+        : <><strong>Synthetische Demo – keine echten Studierendendaten verwenden.</strong> Keine PDF-Verarbeitung, keine Modellinferenz, keine API- oder Provideraufrufe. Rubrik und Vorhersagen sind illustrativ. Freigabe ist keine Zustellung.</>}</aside>
       <div className="lecturer-toolbar">
         <button disabled={!session} onClick={download}>Sitzung sichern</button>
-        <input hidden ref={importRef} type="file" accept=".json,application/json" aria-label="Synthetische Sitzungssicherung" onChange={event => void restore(event)} />
+        <input hidden ref={importRef} type="file" accept=".json,application/json" aria-label="Sitzungssicherung" onChange={event => void restore(event)} />
         <button disabled={!ready || busy} onClick={() => importRef.current?.click()}>Sicherung wiederherstellen</button>
         <button disabled={!ready || (!session && !loadFailure) || busy} onClick={() => {
-          if (window.confirm('Lokalen Demo-Fall einschließlich Entwurf und Freigaben endgültig löschen? Exportieren Sie vorher bei Bedarf eine Sicherung.')) { persist(null); setStep(0) }
+          if (window.confirm('Lokalen Fall einschließlich Entwurf und Freigaben endgültig löschen? Exportieren Sie vorher bei Bedarf eine Sicherung.')) { persist(null); setAuthorized(false); setStep(0) }
         }}>Lokalen Fall löschen</button>
         <span role="status">{saveStatus}</span>
       </div>
@@ -185,17 +194,25 @@ export default function LecturerWorkbench({ service }: { service?: LecturerServi
       <h1 ref={heading} tabIndex={-1}>{steps[step]}</h1>
       {!ready && !saveError && <p role="status">Lokaler Stand wird geladen …</p>}
       {step === 0 && <section className="lecturer-card">
-        <h2>Synthetischen Fall vorbereiten</h2>
-        <p>Ein festes erfundenes Beispiel demonstriert den Ablauf. Es werden keine Dateien eingelesen. In diesem Browser wird genau ein Demo-Fall gespeichert; Sicherungen sind nur für diesen neuen Workflow bestimmt.</p>
+        <h2>{apiMode ? 'Test-PDF vorbereiten' : 'Synthetischen Fall vorbereiten'}</h2>
+        {apiMode ? <>
+          <p>Nur synthetische Text-PDFs bis 10 MiB. Vorbereitung verarbeitet die PDF im Backend, ohne Feedback zu erzeugen. Bewertungsmaterialien werden vom Server geladen. Die PDF wird nicht in der Sitzung gespeichert.</p>
+          <label className="lecturer-field">PDF auswählen<input type="file" accept=".pdf,application/pdf" disabled={busy} onChange={event => {
+            const file = event.target.files?.[0]
+            if (file && (file.size === 0 || file.size > 10 * 1024 * 1024)) {
+              setError('Wählen Sie eine nicht leere PDF bis 10 MiB.'); setPdf(undefined); event.target.value = ''
+            } else { setPdf(file); setError('') }
+          }} /></label>
+        </> : <p>Ein festes erfundenes Beispiel demonstriert den Ablauf. Es werden keine Dateien eingelesen. In diesem Browser wird genau ein Demo-Fall gespeichert; Sicherungen sind nur für diesen neuen Workflow bestimmt.</p>}
         <p>Browserdaten können verloren gehen und sind auf gemeinsam genutzten Geräten nicht privat. Sichern Sie Ihre Arbeit und löschen Sie lokale Daten nach Gebrauch. Eine Sitzungssicherung enthält Reflexion, Bewertungen, Kandidaten, Entwurf und Freigaben; sie ist kein Studierendenexport.</p>
-        <button disabled={!ready || busy || loadFailure} onClick={() => void prepare()}>{busy ? 'Vorbereitung läuft …' : session ? 'Neuen Demo-Fall starten' : 'Demo-Fall öffnen'}</button>
+        <button disabled={!ready || busy || loadFailure || (apiMode && !pdf)} onClick={() => void prepare()}>{busy ? 'Vorbereitung läuft …' : apiMode ? 'PDF ausdrücklich hochladen und vorbereiten' : session ? 'Neuen Demo-Fall starten' : 'Demo-Fall öffnen'}</button>
         {session && <p>Fall vorhanden. Nutzen Sie die Schritte oben zum Fortsetzen.</p>}
       </section>}
       {session && step > 0 && <div className="lecturer-columns">
         <div>
           <ReflectionViewer segments={session.prepared.segments} activeId={activeEvidence} scrollRef={reflection} />
-          <details className="lecturer-card"><summary>Illustrative Vorhersagen (simuliert)</summary>{session.prepared.segments.map(segment => <p key={segment.segment_id}>Segment {segment.order + 1}: {DIMENSIONS.map(dimension => `${dimension} ${segment.prediction[dimension]}`).join(' · ')}</p>)}</details>
-          <aside className="lecturer-card"><h2>Demo-Rubrik (schreibgeschützt)</h2><p>{session.prepared.rubric.guidance}</p><small>{session.prepared.rubric.id} / {session.prepared.rubric.version}</small></aside>
+          <details className="lecturer-card"><summary>{apiMode ? 'Vorhersagen (keine menschlichen Bewertungen; ungesicherte Client-Daten)' : 'Illustrative Vorhersagen (simuliert)'}</summary>{session.prepared.segments.map(segment => <p key={segment.segment_id}>Segment {segment.order + 1}: {DIMENSIONS.map(dimension => `${dimension} ${segment.prediction[dimension] ?? 'N (außerhalb des Bereichs)'}`).join(' · ')}</p>)}</details>
+          <aside className="lecturer-card"><h2>{apiMode ? 'Server-Bewertungsleitfaden (schreibgeschützt)' : 'Demo-Rubrik (schreibgeschützt)'}</h2><p style={{ whiteSpace: 'pre-wrap' }}>{session.prepared.rubric.guidance}</p><small>{session.prepared.rubric.id} / {session.prepared.rubric.version}{session.prepared.api && <> · Leitfaden {session.prepared.api.materials.scoring_guide.artifact_id} / {session.prepared.api.materials.scoring_guide.version}</>}</small></aside>
         </div>
         <section className="lecturer-card" aria-label={steps[step]}>
           {step === 1 && <>
@@ -212,17 +229,18 @@ export default function LecturerWorkbench({ service }: { service?: LecturerServi
             </>}
           </>}
           {step === 2 && <>
-            <h2>G1 und G2 simulieren und vergleichen</h2>
-            <p>Explizite Simulation, nacheinander G1 und G2. Beide müssen vorliegen. Eine Präferenz ist noch keine Freigabe.</p>
+            <h2>G1 und G2 {apiMode ? 'erzeugen' : 'simulieren'} und vergleichen</h2>
+            <p>Explizite Anfragen, nacheinander G1 und G2. Beide müssen vorliegen. Eine Präferenz ist noch keine Freigabe.</p>
+            {apiMode && <label className="lecturer-check"><input type="checkbox" checked={authorized} disabled={busy} onChange={event => setAuthorized(event.target.checked)} />Ich bin für die externe Erzeugung mit diesen synthetischen Testdaten autorisiert. Der Reflexionstext wird an den serverseitig konfigurierten Provider übermittelt. Ein Abbruch kann Verarbeitung oder Kosten nicht ausschließen. Diese Bestätigung ersetzt keine institutionelle Genehmigung.</label>}
             {!bothSucceeded(session) && <>
-              {!service && <label className="lecturer-check"><input type="checkbox" checked={failG2} disabled={busy} onChange={event => setFailG2(event.target.checked)} />Demo: nächsten G2-Aufruf fehlschlagen lassen</label>}
-              <button disabled={busy} onClick={() => void generate()}>Fehlende Kandidaten simulieren</button>
+              {!service && !apiMode && <label className="lecturer-check"><input type="checkbox" checked={failG2} disabled={busy} onChange={event => setFailG2(event.target.checked)} />Demo: nächsten G2-Aufruf fehlschlagen lassen</label>}
+              <button disabled={busy || (apiMode && !authorized)} onClick={() => void generate()}>Fehlende Kandidaten {apiMode ? 'ausdrücklich erzeugen' : 'simulieren'}</button>
             </>}
             <div className="lecturer-candidates">{CONDITIONS.map(condition => {
               const attempt = session.candidates[condition]
               return <article className="lecturer-candidate" key={condition}><h3>{condition}</h3><p role="status">{statusLabels[attempt.status]}</p>
                 {attempt.error && <p role="alert">{attempt.error}</p>}
-                {['failed', 'interrupted'].includes(attempt.status) && <button disabled={busy} onClick={() => void generate(condition)}>{condition} ausdrücklich erneut versuchen</button>}
+                {['failed', 'interrupted'].includes(attempt.status) && <button disabled={busy || (apiMode && !authorized)} onClick={() => void generate(condition)}>{condition} ausdrücklich erneut versuchen</button>}
                 {bothSucceeded(session) && attempt.result?.items.map(item => <div key={item.id}><FeedbackHeading component={item.category} /><p>{item.text}</p>{links(item)}</div>)}
               </article>
             })}</div>

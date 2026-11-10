@@ -1,5 +1,6 @@
 import Ajv from 'ajv'
 import { canonicalJson } from './ratingValidation'
+import { preparationSchema, materialsSchema, generationSchema, mapApiPrepared, mapApiGeneration, type ApiPreparation, type ApiMaterials, type ApiGeneration } from './lecturerApi'
 
 export const DIMENSIONS = ['SW', 'UA', 'HA'] as const
 export const CONDITIONS = ['G1', 'G2'] as const
@@ -13,17 +14,18 @@ export type Scores = Record<Dimension, number | null>
 export type LecturerItem = { id: string; category: Category; text: string; evidence: string[]; source: { candidateId: string; itemId: string } | null }
 export type PreparedCase = {
   documentId: string
-  segments: { segment_id: string; order: number; text: string; prediction: Record<Dimension, number> }[]
+  segments: { segment_id: string; order: number; text: string; prediction: Record<Dimension, number | null> }[]
   rubric: { id: string; version: string; guidance: string }
-  provenance: 'synthetic-fake-v1'
+  provenance: 'synthetic-fake-v1' | 'http-api-v1'
+  api?: { preparation: ApiPreparation; materials: ApiMaterials }
 }
-export type Candidate = { id: string; condition: Condition; documentId: string; rubricId: string; rubricVersion: string; items: LecturerItem[]; provenance: 'synthetic-fake-v1' }
+export type Candidate = { id: string; condition: Condition; documentId: string; rubricId: string; rubricVersion: string; items: LecturerItem[]; provenance: 'synthetic-fake-v1' | 'http-api-v1'; api?: ApiGeneration }
 type Attempt = { status: 'idle' | 'pending' | 'succeeded' | 'failed' | 'interrupted'; attemptId: string | null; error: string | null; result: Candidate | null }
 type Draft = { revision: number; comparisonRevision: number; items: LecturerItem[] }
 type Approval = { draft: Draft; comparisonRevision: number; candidateIds: string[]; preference: Preference; approvedAt: string }
 export type LecturerSession = {
   kind: 'prebi_lecturer_workflow'
-  schema_version: '1.0.0'
+  schema_version: '1.0.0' | '1.1.0'
   id: string
   revision: number
   prepared: PreparedCase
@@ -46,19 +48,20 @@ const record = (properties: Record<string, object>) => ({ type: 'object', additi
 const score = { enum: [0, 0.5, 1, 1.5, 2, 2.5, 3, null] }
 const schema = {
   ...record({
-    kind: { const: 'prebi_lecturer_workflow' }, schema_version: { const: '1.0.0' }, id: identifier, revision: integer,
+    kind: { const: 'prebi_lecturer_workflow' }, schema_version: { enum: ['1.0.0', '1.1.0'] }, id: identifier, revision: integer,
     prepared: ref('prepared'), scores: record({ SW: score, UA: score, HA: score }), confirmedAt: nullable(timestamp),
     candidates: record({ G1: ref('attempt'), G2: ref('attempt') }), comparison: nullable(ref('comparison')),
     draft: nullable(ref('draft')), approvals: array(ref('approval')),
   }),
   $defs: {
     item: record({ id: identifier, category: { enum: CATEGORIES }, text, evidence: { ...array(identifier), uniqueItems: true }, source: nullable(record({ candidateId: identifier, itemId: identifier })) }),
-    prepared: record({
+    prepared: { ...record({
       documentId: identifier,
-      segments: { ...array(record({ segment_id: identifier, order: integer, text: { ...text, minLength: 1 }, prediction: record({ SW: { enum: [0, 1, 2, 3] }, UA: { enum: [0, 1, 2, 3] }, HA: { enum: [0, 1, 2, 3] } }) })), minItems: 1 },
-      rubric: record({ id: identifier, version: identifier, guidance: { ...text, minLength: 1 } }), provenance: { const: 'synthetic-fake-v1' },
-    }),
-    candidate: record({ id: identifier, condition: { enum: CONDITIONS }, documentId: identifier, rubricId: identifier, rubricVersion: identifier, items: { ...array(ref('item')), minItems: 1 }, provenance: { const: 'synthetic-fake-v1' } }),
+      segments: { ...array(record({ segment_id: identifier, order: integer, text: { ...text, minLength: 1 }, prediction: record({ SW: { enum: [0, 1, 2, 3, null] }, UA: { enum: [0, 1, 2, 3, null] }, HA: { enum: [0, 1, 2, 3, null] } }) })), minItems: 1 },
+      rubric: record({ id: identifier, version: identifier, guidance: { ...text, minLength: 1 } }), provenance: { enum: ['synthetic-fake-v1', 'http-api-v1'] },
+      api: record({ preparation: preparationSchema, materials: materialsSchema }),
+    }), required: ['documentId', 'segments', 'rubric', 'provenance'] },
+    candidate: { ...record({ id: identifier, condition: { enum: CONDITIONS }, documentId: identifier, rubricId: identifier, rubricVersion: identifier, items: array(ref('item')), provenance: { enum: ['synthetic-fake-v1', 'http-api-v1'] }, api: generationSchema }), required: ['id', 'condition', 'documentId', 'rubricId', 'rubricVersion', 'items', 'provenance'] },
     attempt: record({ status: { enum: ['idle', 'pending', 'succeeded', 'failed', 'interrupted'] }, attemptId: nullable(identifier), error: nullable(text), result: nullable(ref('candidate')) }),
     comparison: record({ preference: { enum: ['G1', 'G2', 'tie', 'neither'] }, revision: { type: 'integer', minimum: 1 }, candidateIds: { ...array(identifier, 2), minItems: 2, uniqueItems: true } }),
     draft: record({ revision: { type: 'integer', minimum: 1 }, comparisonRevision: { type: 'integer', minimum: 1 }, items: array(ref('item')) }),
@@ -86,14 +89,22 @@ function checkItems(items: LecturerItem[], prepared: PreparedCase, candidates: C
   }
 }
 export function parsePrepared(value: unknown): PreparedCase {
-  requireThat(validatePrepared(value), 'Ungültige synthetische Vorbereitung.')
-  requireThat(new Set(value.segments.map(segment => segment.segment_id)).size === value.segments.length && value.segments.every((segment, index) => segment.order === index), 'Ungültige Segmentreihenfolge oder doppelte Kennung.')
+  requireThat(validatePrepared(value), 'Ungültige Vorbereitung.')
+  requireThat(new Set(value.segments.map(segment => segment.segment_id)).size === value.segments.length && value.segments.every((segment, index) => index === 0 || segment.order > value.segments[index - 1].order), 'Ungültige Segmentreihenfolge oder doppelte Kennung.')
+  if (value.provenance === 'http-api-v1') {
+    requireThat(value.api && same(value, mapApiPrepared(value.api.preparation, value.api.materials)), 'Vorbereitung und API-Daten unterscheiden sich.')
+  } else {
+    requireThat(!value.api && value.segments.every((segment, index) => segment.order === index && Object.values(segment.prediction).every(band => band !== null)), 'Ungültige synthetische Vorbereitung.')
+  }
   return structuredClone(value)
 }
 function checkCandidate(value: unknown, prepared: PreparedCase, condition: Condition): Candidate {
   requireThat(validateCandidate(value), 'Ungültiges Kandidatenergebnis.')
   requireThat(value.condition === condition && value.documentId === prepared.documentId && value.rubricId === prepared.rubric.id && value.rubricVersion === prepared.rubric.version, 'Das Ergebnis gehört nicht zur aktuellen Eingabe.')
   requireThat(value.items.every(item => item.source === null), 'Originale dürfen keine Entwurfsherkunft enthalten.')
+  requireThat(value.provenance === prepared.provenance, 'Kandidatenmodus passt nicht zum Fall.')
+  if (prepared.api) requireThat(value.api && same(value, mapApiGeneration(value.api, prepared, condition)), 'Kandidat und API-Daten unterscheiden sich.')
+  else requireThat(!value.api && value.items.length, 'Ungültiger synthetischer Kandidat.')
   checkItems(value.items, prepared, [], true)
   return structuredClone(value)
 }
@@ -102,10 +113,11 @@ export function bothSucceeded(session: LecturerSession): boolean {
 }
 function candidateIds(session: LecturerSession): string[] { return CONDITIONS.map(condition => session.candidates[condition].result!.id) }
 export function parseLecturerSession(value: unknown, recover = true): LecturerSession {
-  requireThat(validate(value), 'Ungültige oder nicht unterstützte Dozierenden-Sicherung (Version 1.0.0).')
+  requireThat(validate(value), 'Ungültige oder nicht unterstützte Dozierenden-Sicherung (Demo 1.0.0 / API 1.1.0).')
   requireThat(new TextEncoder().encode(JSON.stringify(value, null, 2)).byteLength <= MAX_BACKUP_BYTES, 'Die Sitzung überschreitet das Sicherungslimit von 5 MB. Die Änderung wurde nicht übernommen.')
   const session = structuredClone(value)
   parsePrepared(session.prepared)
+  requireThat(session.schema_version === (session.prepared.api ? '1.1.0' : '1.0.0'), 'Sicherungsversion passt nicht zum Modus.')
   for (const date of [session.confirmedAt, ...session.approvals.map(approval => approval.approvedAt)]) {
     requireThat(date === null || Number.isFinite(Date.parse(date)) && new Date(date).toISOString() === date, 'Ungültiger Zeitstempel.')
   }
@@ -141,7 +153,8 @@ export function parseLecturerSession(value: unknown, recover = true): LecturerSe
 }
 const idle = (): Attempt => ({ status: 'idle', attemptId: null, error: null, result: null })
 export function createLecturerSession(prepared: unknown, id: string): LecturerSession {
-  return parseLecturerSession({ kind: 'prebi_lecturer_workflow', schema_version: '1.0.0', id, revision: 0, prepared: parsePrepared(prepared), scores: { SW: null, UA: null, HA: null }, confirmedAt: null, candidates: { G1: idle(), G2: idle() }, comparison: null, draft: null, approvals: [] })
+  const parsed = parsePrepared(prepared)
+  return parseLecturerSession({ kind: 'prebi_lecturer_workflow', schema_version: parsed.api ? '1.1.0' : '1.0.0', id, revision: 0, prepared: parsed, scores: { SW: null, UA: null, HA: null }, confirmedAt: null, candidates: { G1: idle(), G2: idle() }, comparison: null, draft: null, approvals: [] })
 }
 function change(session: LecturerSession, edit: (next: LecturerSession) => void): LecturerSession {
   const next = structuredClone(session)

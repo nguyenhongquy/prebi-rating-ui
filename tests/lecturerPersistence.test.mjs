@@ -28,6 +28,18 @@ const locks = { request(_name, action) {
 } }
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks } })
 
+test('API storage is isolated from demo data and rejects wrong-mode saves and restores', async () => {
+  entries.clear()
+  entries.set(LECTURER_STORAGE_KEY, newSession())
+  const api = new LecturerPersistence('api')
+  assert.equal(await api.load(), null)
+  assert.throws(() => api.save(newSession()), /Modus/)
+  await api.save(null)
+  assert.equal(entries.has(LECTURER_STORAGE_KEY), true)
+  entries.set('lecturer-workflow::api::v1.1', newSession())
+  await assert.rejects(new LecturerPersistence('api').load(), /Modus/)
+})
+
 test('isolated storage queues writes, snapshots values and deletes only its own namespace', async () => {
   entries.clear()
   entries.set('research::untouched', { preserve: true })

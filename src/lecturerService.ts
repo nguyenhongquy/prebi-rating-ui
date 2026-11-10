@@ -1,8 +1,8 @@
 import type { Candidate, Condition, PreparedCase } from './lecturerSession'
 
 export interface LecturerService {
-  prepare(): Promise<unknown>
-  generate(prepared: PreparedCase, condition: Condition, attemptId: string): Promise<unknown>
+  prepare(file?: File): Promise<unknown>
+  generate(prepared: PreparedCase, condition: Condition, attemptId: string, allowExternalGeneration?: boolean): Promise<unknown>
 }
 
 export const SYNTHETIC_CASE: PreparedCase = {
