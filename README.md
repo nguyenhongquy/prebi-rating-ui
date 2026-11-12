@@ -1,5 +1,38 @@
 # PReBi Evaluator Guide
 
+## G1 feedback generation (developers)
+
+The standalone G1 workspace is available at `?workflow=g1`. The default expert
+evaluation and its stored data remain separate. Paste a German reflection;
+a period followed by a line break divides segments. Periods without a following
+line break and line breaks without a preceding period do not split the text.
+Common abbreviations (such as `z. B.`, `d. h.`, `Dr.` and `usw.`) and
+decimal numbers are protected heuristically; the heuristic is not a full
+sentence tokenizer and may keep a sentence-ending abbreviation with the next
+line. Review the displayed boundaries and edit the input before confirming.
+Leading and trailing whitespace is removed from each segment. The generated
+segment IDs are used for evidence references; boundaries may affect research output.
+
+The local service sends the reflection to Google Gemini. Only use material
+approved for external processing, and explicitly confirm that authorization.
+The output is model-generated and requires human review. Neither the input nor
+the result is persisted by this workspace; download the original response JSON
+before leaving. The response itself does not include the input reflection,
+feedback letter, or provenance. Handle downloads as potentially sensitive.
+
+Run the standalone service as described in
+[`prebi-g1-backend/README.md`](../prebi-g1-backend/README.md), then start the
+UI with `npm run dev`. By default Vite forwards `/api/g1/*` unchanged to
+`http://127.0.0.1:8000`. The existing lecturer `/api/*` proxy continues to
+strip `/api`. If both distinct backends are needed concurrently, run G1 on a
+different port and start Vite with, for example,
+`PREBI_G1_BACKEND_URL=http://127.0.0.1:8001 npm run dev`.
+The Vite proxy is development-only; preview or production hosting needs
+equivalent same-origin routes and an appropriate access policy. Never expose
+the unauthenticated G1 service publicly or put provider keys in the frontend.
+Generation requests are not retried automatically: a timeout or disconnect
+does not guarantee that the provider stopped processing or billing.
+
 ## Lecturer workflow demo (developers)
 
 The existing evaluator remains the default. A separate **synthetic-only**

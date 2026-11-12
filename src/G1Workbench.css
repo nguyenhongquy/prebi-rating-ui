@@ -1,0 +1,29 @@
+.g1-workbench { max-width: 1500px; margin: auto; padding: 1.5rem; }
+.g1-workbench p { line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.g1-workbench button { display: inline-flex; align-items: center; gap: .5rem; border: 1px solid var(--ph-green); border-radius: .35rem; padding: .65rem .85rem; background: white; color: var(--ph-moss); }
+.g1-workbench button.g1-primary { background: var(--ph-green); color: white; }
+.g1-workbench button:disabled { opacity: .55; cursor: not-allowed; }
+.g1-notice { background: var(--ph-lilac); padding: 1rem; border: 1px solid var(--ph-purple); border-radius: .5rem; }
+.g1-card { background: white; border: 1px solid #b5c5b8; border-radius: .5rem; padding: 1.25rem; margin: 1rem 0; min-width: 0; overflow-wrap: anywhere; }
+.g1-field { display: grid; gap: .5rem; font-weight: 600; }
+.g1-field textarea { width: 100%; padding: .7rem; border: 1px solid #65776b; border-radius: .25rem; resize: vertical; font-weight: 400; }
+.g1-check { display: flex; align-items: start; gap: .6rem; margin: 1rem 0; line-height: 1.5; }
+.g1-check input { flex-shrink: 0; margin-top: .3rem; }
+.g1-segments { padding-left: 2rem; }
+.g1-segments li { padding: .4rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.g1-error { background: #fff0ef; border: 2px solid #9c2525; color: #651515; padding: 1rem; }
+.g1-result-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+.g1-result-header h2, .g1-result-header p { margin: .4rem 0; }
+.g1-workbench .comparison-area { height: auto; min-height: 0; position: static; align-items: start; background: transparent; }
+.g1-workbench .comparison-area > .source-panel { height: auto; position: sticky; top: 1rem; }
+.g1-output { min-width: 0; }
+.g1-output > .g1-card:first-child { margin-top: 0; }
+.g1-dimension { border-top: 1px solid #b5c5b8; padding-top: .5rem; margin-top: 1rem; }
+.g1-dimension article { margin: 1rem 0; }
+.g1-workbench .source-scroll { max-height: 70vh; }
+.g1-workbench summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 850px) {
+  .g1-workbench { padding: .75rem; }
+  .g1-workbench .comparison-area { grid-template-columns: minmax(0, 1fr); }
+  .g1-workbench .comparison-area > .source-panel { position: static; }
+}

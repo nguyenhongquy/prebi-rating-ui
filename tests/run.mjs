@@ -16,9 +16,9 @@ try {
   if (reviewCompilation.status !== 0) throw new Error('Could not compile review contract for tests.')
   const reviewModulePath = join(temporaryDirectory, 'reviewContract.cjs')
   renameSync(join(temporaryDirectory, 'reviewContract.js'), reviewModulePath)
-  const pairwiseCompilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/pairwiseEvaluationSession.ts', 'src/pairwiseEvaluationValidation.ts', 'src/lecturerSession.ts', 'src/lecturerService.ts', 'src/lecturerPersistence.ts', '--target', 'ES2022', '--module', 'CommonJS', '--moduleResolution', 'Node', '--ignoreDeprecations', '6.0', '--esModuleInterop', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
+  const pairwiseCompilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/pairwiseEvaluationSession.ts', 'src/pairwiseEvaluationValidation.ts', 'src/lecturerSession.ts', 'src/lecturerService.ts', 'src/lecturerPersistence.ts', 'src/g1Api.ts', '--target', 'ES2022', '--module', 'CommonJS', '--moduleResolution', 'Node', '--ignoreDeprecations', '6.0', '--esModuleInterop', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
   if (pairwiseCompilation.status !== 0) throw new Error('Could not compile pairwise evaluation modules for tests.')
-  const result = spawnSync(process.execPath, ['--test', 'tests/ratingValidation.test.mjs', 'tests/reviewContract.test.mjs', 'tests/expertSession.test.mjs', 'tests/reviewSession.test.mjs', 'tests/pairwiseEvaluation.test.mjs', 'tests/lecturerSession.test.mjs', 'tests/lecturerPersistence.test.mjs', 'tests/lecturerApi.test.mjs'], {
+  const result = spawnSync(process.execPath, ['--test', 'tests/ratingValidation.test.mjs', 'tests/reviewContract.test.mjs', 'tests/expertSession.test.mjs', 'tests/reviewSession.test.mjs', 'tests/pairwiseEvaluation.test.mjs', 'tests/lecturerSession.test.mjs', 'tests/lecturerPersistence.test.mjs', 'tests/lecturerApi.test.mjs', 'tests/g1Api.test.mjs'], {
     cwd: projectRoot,
     stdio: 'inherit',
     env: {
