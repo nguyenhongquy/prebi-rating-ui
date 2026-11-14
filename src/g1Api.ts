@@ -69,6 +69,20 @@ export function validateG1Output(value: unknown, document: G1Document): G1Output
   return value
 }
 
+export function resolveG1Endpoint(base: string | undefined): string {
+  const trimmed = (base ?? '').trim().replace(/\/$/, '')
+  if (!trimmed) return '/api/g1/generate'
+  const invalid = 'VITE_G1_API_BASE_URL muss eine absolute https://-URL ohne Pfad, Anmeldedaten, Abfrage und Fragment sein.'
+  let url: URL
+  try { url = new URL(trimmed) } catch { throw new Error(invalid) }
+  // origin equality rejects any path, credentials, query, or fragment
+  if (url.protocol !== 'https:' || url.origin !== trimmed) throw new Error(invalid)
+  return `${url.origin}/api/g1/generate`
+}
+
+// Fails at startup if the baked-in base URL is invalid; not a secret.
+const g1Endpoint = resolveG1Endpoint((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_G1_API_BASE_URL)
+
 export async function generateG1(document: G1Document, signal?: AbortSignal, fetcher: typeof fetch = fetch): Promise<G1Result> {
   const controller = new AbortController()
   const abort = () => controller.abort()
@@ -79,7 +93,7 @@ export async function generateG1(document: G1Document, signal?: AbortSignal, fet
   try {
     let response: Response
     try {
-      response = await fetcher('/api/g1/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(document), cache: 'no-store', redirect: 'error', signal: controller.signal })
+      response = await fetcher(g1Endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(document), cache: 'no-store', redirect: 'error', signal: controller.signal })
     } catch { throw new Error(networkError) }
     if (!response.ok) {
       const messages: Record<number, string> = { 422: 'Die G1-Eingabe wurde vom Dienst abgelehnt.', 502: 'Die G1-Erzeugung oder die Validierung des Modellergebnisses ist fehlgeschlagen.', 503: 'Der G1-Dienst ist nicht bereit. Prüfen Sie Konfiguration, Zugangsdaten und Dienstprotokoll.' }

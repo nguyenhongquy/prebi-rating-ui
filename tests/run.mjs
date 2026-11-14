@@ -8,15 +8,17 @@ const projectRoot = fileURLToPath(new URL('../', import.meta.url))
 const temporaryDirectory = mkdtempSync(join(projectRoot, 'node_modules/.prebi-tests-'))
 try {
   const compiler = createRequire(import.meta.url).resolve('typescript/bin/tsc')
-  const compilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/ratingValidation.ts', '--target', 'ES2022', '--module', 'ES2022', '--moduleResolution', 'Bundler', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
+  const compilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/ratingValidation.ts', 'src/g1Api.ts', '--target', 'ES2022', '--module', 'ES2022', '--moduleResolution', 'Bundler', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
   if (compilation.status !== 0) throw new Error('Could not compile rating validation for tests.')
   const modulePath = join(temporaryDirectory, 'ratingValidation.mjs')
   renameSync(join(temporaryDirectory, 'ratingValidation.js'), modulePath)
+  const g1ModulePath = join(temporaryDirectory, 'g1Api.mjs')
+  renameSync(join(temporaryDirectory, 'g1Api.js'), g1ModulePath)
   const reviewCompilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/reviewContract.ts', '--target', 'ES2022', '--module', 'CommonJS', '--moduleResolution', 'Node', '--ignoreDeprecations', '6.0', '--esModuleInterop', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
   if (reviewCompilation.status !== 0) throw new Error('Could not compile review contract for tests.')
   const reviewModulePath = join(temporaryDirectory, 'reviewContract.cjs')
   renameSync(join(temporaryDirectory, 'reviewContract.js'), reviewModulePath)
-  const pairwiseCompilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/pairwiseEvaluationSession.ts', 'src/pairwiseEvaluationValidation.ts', 'src/lecturerSession.ts', 'src/lecturerService.ts', 'src/lecturerPersistence.ts', 'src/g1Api.ts', '--target', 'ES2022', '--module', 'CommonJS', '--moduleResolution', 'Node', '--ignoreDeprecations', '6.0', '--esModuleInterop', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
+  const pairwiseCompilation = spawnSync(process.execPath, [compiler, '--ignoreConfig', 'src/pairwiseEvaluationSession.ts', 'src/pairwiseEvaluationValidation.ts', 'src/lecturerSession.ts', 'src/lecturerService.ts', 'src/lecturerPersistence.ts', '--target', 'ES2022', '--module', 'CommonJS', '--moduleResolution', 'Node', '--ignoreDeprecations', '6.0', '--esModuleInterop', '--strict', '--skipLibCheck', '--outDir', temporaryDirectory], { cwd: projectRoot, stdio: 'inherit' })
   if (pairwiseCompilation.status !== 0) throw new Error('Could not compile pairwise evaluation modules for tests.')
   const result = spawnSync(process.execPath, ['--test', 'tests/ratingValidation.test.mjs', 'tests/reviewContract.test.mjs', 'tests/expertSession.test.mjs', 'tests/reviewSession.test.mjs', 'tests/pairwiseEvaluation.test.mjs', 'tests/lecturerSession.test.mjs', 'tests/lecturerPersistence.test.mjs', 'tests/lecturerApi.test.mjs', 'tests/g1Api.test.mjs'], {
     cwd: projectRoot,
@@ -24,6 +26,7 @@ try {
     env: {
       ...process.env,
       PREBI_RATING_VALIDATION_MODULE: pathToFileURL(modulePath).href,
+      PREBI_G1_API_MODULE: pathToFileURL(g1ModulePath).href,
       PREBI_REVIEW_MODULE: pathToFileURL(reviewModulePath).href,
       PREBI_PAIRWISE_VALIDATION_MODULE: join(temporaryDirectory, 'pairwiseEvaluationValidation.js'),
       PREBI_PAIRWISE_SESSION_MODULE: join(temporaryDirectory, 'pairwiseEvaluationSession.js'),
