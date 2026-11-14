@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
 import test from 'node:test'
 
-const require = createRequire(import.meta.url)
-const { splitReflectionSegments, makeG1Document, validateG1Output, generateG1 } = require(join(dirname(process.env.PREBI_LECTURER_SESSION_MODULE), 'g1Api.js'))
+const { splitReflectionSegments, makeG1Document, validateG1Output, generateG1, resolveG1Endpoint } = await import(process.env.PREBI_G1_API_MODULE)
 const document = makeG1Document(['Erster Absatz.', 'Zweiter Absatz.'], 'doc-1')
 function output() {
   const claim = { interpretation: 'Belegte Beobachtung.', evidence_refs: ['s1'] }
@@ -93,4 +90,21 @@ test('errors are explicit, safe, and never retry automatically', async () => {
   await assert.rejects(generateG1(document, undefined, async () => json('{')), /ungültiges JSON/)
   await assert.rejects(generateG1(document, undefined, async () => new Response('bad', { headers: { 'Content-Type': 'text/html' } })), /keine JSON-Antwort/)
   await assert.rejects(generateG1(document, undefined, async () => json(' '.repeat(5_000_001))), /5 MB/)
+})
+
+test('API base URL stays relative when unset and composes absolute endpoints strictly', () => {
+  assert.equal(resolveG1Endpoint(undefined), '/api/g1/generate')
+  assert.equal(resolveG1Endpoint(''), '/api/g1/generate')
+  assert.equal(resolveG1Endpoint('  '), '/api/g1/generate')
+  assert.equal(resolveG1Endpoint('https://prebi-g1-abc123.europe-west4.run.app'), 'https://prebi-g1-abc123.europe-west4.run.app/api/g1/generate')
+  assert.equal(resolveG1Endpoint('https://prebi-g1-abc123.europe-west4.run.app/'), 'https://prebi-g1-abc123.europe-west4.run.app/api/g1/generate')
+  for (const base of [
+    'http://prebi-g1-abc123.europe-west4.run.app',
+    'https://service.example/api',
+    'https://user:pass@service.example',
+    'https://service.example?mode=g1',
+    'https://service.example#fragment',
+    'service.example',
+    '//service.example',
+  ]) assert.throws(() => resolveG1Endpoint(base), /https/)
 })

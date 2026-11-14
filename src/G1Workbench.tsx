@@ -77,7 +77,7 @@ export default function G1Workbench() {
   return <AppShell workflow="G1 generation">
     <main className="g1-workbench">
       <h1>G1 Feedback erstellen</h1>
-      <p className="g1-notice"><strong>Externe Verarbeitung:</strong> Der lokale G1-Dienst übermittelt die Reflexion an Google Gemini. Verwenden Sie nur dafür freigegebene Daten. Das Ergebnis ist automatisch erzeugt und muss fachlich geprüft werden.</p>
+      <p className="g1-notice"><strong>Externe Verarbeitung:</strong> Der konfigurierte G1-Dienst übermittelt die Reflexion an Google Gemini. Verwenden Sie nur dafür freigegebene Daten. Das Ergebnis ist automatisch erzeugt und muss fachlich geprüft werden.</p>
       <form className="g1-card" onSubmit={generate}>
         <label className="g1-field">Deutsche Reflexion
           <textarea value={text} disabled={busy} onChange={event => { setText(event.target.value); setReviewed(false); setAuthorized(false) }} rows={9} placeholder="Reflexion hier eingeben oder einfügen" />
